@@ -57,13 +57,18 @@ One-time setup of the mirror:
    `ssh-keygen -t ed25519 -N "" -C "jpipe-ci-actions mirror" -f gitlab_mirror`
 2. On GitLab, *Settings → Repository → Deploy keys*: add `gitlab_mirror.pub` and tick
    **Grant write permissions to this key**.
-3. On GitLab, *Settings → Repository → Protected branches*: add that deploy key to
-   *Allowed to push and merge* for `main`. Do the same for any protected tags.
-4. On GitHub, *Settings → Secrets and variables → Actions*: add the private key
+3. If the GitLab project is empty, it has no `main` yet, so there is nothing to protect.
+   Seed it once from a clone, as a Maintainer, with GitHub's `main` (the same commit, so
+   the mirror only adds to it later):
+   `git fetch origin && git push git@gitlab.com:mcscert/jpipe-ci-actions.git origin/main:refs/heads/main`
+4. On GitLab, *Settings → Repository → Protected branches*: in the `main` row, open
+   *Allowed to push and merge* and tick the deploy key. Do the same under *Protected
+   tags* if any tag is protected.
+5. On GitHub, *Settings → Secrets and variables → Actions*: add the private key
    `gitlab_mirror` as the secret `GITLAB_MIRROR_SSH_KEY`. Then delete both files.
-5. On GitLab, *Settings → General → Visibility*: turn on **CI/CD Catalog project**.
-6. Run *Mirror to GitLab* once by hand (*Actions → Mirror to GitLab → Run workflow*, on
-   `main`) to do the first push.
+6. On GitLab, *Settings → General → Visibility*: turn on **CI/CD Catalog project**.
+7. Run *Mirror to GitLab* once by hand (*Actions → Mirror to GitLab → Run workflow*, on
+   `main`) to check that the mirror can push.
 
 Releasing: push a tag of the form `1.2.3` (no `v` prefix: the GitLab CI/CD Catalog only
 publishes plain semantic versions). The mirror pushes it to GitLab, whose pipeline
