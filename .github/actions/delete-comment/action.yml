@@ -1,0 +1,27 @@
+name: "Delete a pull request comment"
+description: "Delete the comment the action posted, so that a test leaves the pull request clean (tests only)"
+
+inputs:
+  comment-id:
+    description: "The action's comment-id output; nothing is done if empty"
+    required: true
+  github-token:
+    description: "Token that can delete the pull request's comments"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/github-script@v9
+      env:
+        COMMENT_ID: ${{ inputs.comment-id }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const id = Number(process.env.COMMENT_ID);
+          if (!Number.isInteger(id) || id <= 0) {
+            core.warning("no comment to delete");
+            return;
+          }
+          await github.rest.issues.deleteComment({ ...context.repo, comment_id: id });
+          core.info(`deleted comment ${id}`);

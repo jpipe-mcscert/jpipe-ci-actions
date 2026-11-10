@@ -1,0 +1,31 @@
+{
+  "name": "raised",
+  "type": "justification",
+  "elements": [
+    {
+      "id": "raised:c",
+      "type": "conclusion",
+      "label": "The step works"
+    },
+    {
+      "id": "raised:s",
+      "type": "strategy",
+      "label": "The value is judged"
+    },
+    {
+      "id": "raised:e",
+      "type": "evidence",
+      "label": "The value is read"
+    }
+  ],
+  "relations": [
+    {
+      "source": "raised:s",
+      "target": "raised:c"
+    },
+    {
+      "source": "raised:e",
+      "target": "raised:s"
+    }
+  ]
+}

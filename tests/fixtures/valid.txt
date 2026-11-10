@@ -1,0 +1,4 @@
+Justification: release
+  Version 2.0 is ready to ship
+
+verdict: valid (a dry run: no step was called)

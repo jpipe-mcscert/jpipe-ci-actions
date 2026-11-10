@@ -1,0 +1,5 @@
+JP001 error: not JSON: Expecting value (line 1, column 1)
+  fix: This is a jPipe source file: compile it with `jpipe process -f JSON`, and pass the JSON file the compiler writes.
+
+1 diagnostic (1 error)
+verdict: invalid (nothing ran)

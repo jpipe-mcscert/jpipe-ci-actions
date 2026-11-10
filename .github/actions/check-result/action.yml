@@ -1,0 +1,38 @@
+name: "Check the result"
+description: "Fail unless the action exited with the expected code and verdict (tests only)"
+
+inputs:
+  result:
+    description: "The action's result output: jPipe Runner's exit code"
+    required: true
+  expected:
+    description: "The exit code expected"
+    required: true
+  verdict:
+    description: "The action's verdict output"
+    required: false
+    default: ""
+  expected-verdict:
+    description: "The verdict expected; not checked if empty"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      env:
+        RESULT: ${{ inputs.result }}
+        EXPECTED: ${{ inputs.expected }}
+        VERDICT: ${{ inputs.verdict }}
+        EXPECTED_VERDICT: ${{ inputs.expected-verdict }}
+      run: |
+        if [[ "$RESULT" != "$EXPECTED" ]]; then
+          echo "::error::expected exit code '$EXPECTED', got '$RESULT'"
+          exit 1
+        fi
+        if [[ -n "$EXPECTED_VERDICT" && "$VERDICT" != "$EXPECTED_VERDICT" ]]; then
+          echo "::error::expected verdict '$EXPECTED_VERDICT', got '$VERDICT'"
+          exit 1
+        fi
+        echo "exit code $RESULT${VERDICT:+, verdict $VERDICT}, as expected"

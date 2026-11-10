@@ -1,0 +1,31 @@
+{
+  "name": "python_version",
+  "type": "justification",
+  "elements": [
+    {
+      "id": "python_version:c",
+      "type": "conclusion",
+      "label": "The steps run on Python 3.12"
+    },
+    {
+      "id": "python_version:s",
+      "type": "strategy",
+      "label": "The version is 3.12"
+    },
+    {
+      "id": "python_version:e",
+      "type": "evidence",
+      "label": "The version is recorded"
+    }
+  ],
+  "relations": [
+    {
+      "source": "python_version:s",
+      "target": "python_version:c"
+    },
+    {
+      "source": "python_version:e",
+      "target": "python_version:s"
+    }
+  ]
+}

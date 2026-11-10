@@ -18,12 +18,47 @@ jobs:
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
 
       - name: Lint shell scripts
-        run: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh github/*.sh
 
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Test the scripts
+        run: python -m unittest discover -s tests -v
+
+  # Runs the action from this checkout, on every push and pull request, without
+  # commenting. The pull request scenarios are in test-action.yml.
   self-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
       - name: Run the action from this checkout
+        id: run
         uses: ./
+        with:
+          working-directory: tests/action/release
+          justification: justification.json
+          library: steps.py
+          dataflow: "true"
+          comment: "false"
+
+      - name: Check its outputs
+        env:
+          RESULT: ${{ steps.run.outputs.result }}
+          VERDICT: ${{ steps.run.outputs.verdict }}
+          REPORT: ${{ steps.run.outputs.report }}
+          DIAGRAM: ${{ steps.run.outputs.diagram }}
+          DATAFLOW: ${{ steps.run.outputs.dataflow }}
+        run: |
+          [[ "$RESULT" == "0" && "$VERDICT" == "pass" ]] || { echo "::error::result $RESULT, verdict $VERDICT"; exit 1; }
+          for file in "$REPORT" "$DIAGRAM" "$DATAFLOW"; do
+            [[ -s "$file" ]] || { echo "::error::missing output file: '$file'"; exit 1; }
+          done
+          jq -e '.verdict == "pass" and .summary.pass == 4' "$REPORT"

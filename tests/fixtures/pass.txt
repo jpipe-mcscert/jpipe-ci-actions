@@ -1,0 +1,10 @@
+Justification: release
+  Version 2.0 is ready to ship
+
+  ✔ Evidence    The test suite passes         # release:e1
+  ✔ Evidence    The changelog is up to date   # release:e2
+  ✔ Strategy    All release gates pass        # release:s
+  ✔ Conclusion  Version 2.0 is ready to ship  # release:c
+
+4 elements (4 passed)
+verdict: pass

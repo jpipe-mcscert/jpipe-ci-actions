@@ -1,0 +1,33 @@
+name: "Fetch a pull request comment"
+description: "Read the comment the action posted, by its id (tests only)"
+
+inputs:
+  comment-id:
+    description: "The action's comment-id output"
+    required: true
+  github-token:
+    description: "Token that can read the pull request's comments"
+    required: true
+
+outputs:
+  body:
+    description: "The comment's body"
+    value: ${{ steps.fetch.outputs.body }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: fetch
+      uses: actions/github-script@v9
+      env:
+        COMMENT_ID: ${{ inputs.comment-id }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const id = Number(process.env.COMMENT_ID);
+          if (!Number.isInteger(id) || id <= 0) {
+            core.setFailed(`the action posted no comment (comment-id: '${process.env.COMMENT_ID}')`);
+            return;
+          }
+          const { data } = await github.rest.issues.getComment({ ...context.repo, comment_id: id });
+          core.setOutput("body", data.body);

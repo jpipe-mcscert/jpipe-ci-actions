@@ -1,0 +1,31 @@
+{
+  "name": "import_error",
+  "type": "justification",
+  "elements": [
+    {
+      "id": "import_error:c",
+      "type": "conclusion",
+      "label": "The library imports"
+    },
+    {
+      "id": "import_error:s",
+      "type": "strategy",
+      "label": "The value is judged"
+    },
+    {
+      "id": "import_error:e",
+      "type": "evidence",
+      "label": "The value is read"
+    }
+  ],
+  "relations": [
+    {
+      "source": "import_error:s",
+      "target": "import_error:c"
+    },
+    {
+      "source": "import_error:e",
+      "target": "import_error:s"
+    }
+  ]
+}

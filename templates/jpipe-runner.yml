@@ -7,7 +7,9 @@
 #       inputs:
 #         working-directory: path/to/model
 #
-# Scaffold only. Every input here mirrors an input of action.yml (see docs/adr/0001).
+# Scaffold only: it runs nothing yet, and does not mirror the inputs of action.yml, which
+# runs jPipe Runner 4 on GitHub (docs/adr/0002). Once it runs the runner, every input
+# here mirrors an input of action.yml (docs/adr/0001).
 spec:
   inputs:
     stage:

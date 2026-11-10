@@ -1,0 +1,18 @@
+Justification: error_prone
+  Validate division result
+
+  ✘ Strategy    Divide by number          # S1
+      steps.divide_by_number: the step raised ZeroDivisionError at steps.py, line 17: division by zero
+  - Conclusion  Validate division result  # C1
+      not run: S1 did not pass
+
+JP022 error [S1]: the step raised ZeroDivisionError at steps.py, line 17: division by zero
+  fix: Return Fail(reason) when the check does not hold: an exception says the step itself is broken.
+  Traceback (most recent call last):
+    File "steps.py", line 17, in divide_by_number
+      return Pass(result=NUMERATOR / DENOMINATOR)
+  ZeroDivisionError: division by zero
+
+2 elements (1 failed, 1 skipped)
+1 diagnostic (1 error)
+verdict: fail

@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "justification": null,
+  "verdict": "invalid",
+  "strict": false,
+  "summary": {
+    "elements": 0,
+    "pass": 0,
+    "fail": 0,
+    "skip": 0,
+    "not_run": 0,
+    "errors": 1,
+    "warnings": 0
+  },
+  "elements": [],
+  "diagnostics": [
+    {
+      "code": "JP001",
+      "severity": "error",
+      "element": null,
+      "message": "not JSON: Expecting value (line 1, column 1)",
+      "fix": "This is a jPipe source file: compile it with `jpipe process -f JSON`, and pass the JSON file the compiler writes.",
+      "traceback": null
+    }
+  ],
+  "diagram": null,
+  "dataflow": null
+}
