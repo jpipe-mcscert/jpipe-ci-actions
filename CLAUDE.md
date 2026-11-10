@@ -2,7 +2,8 @@
 
 One repository, two front ends for running jPipe justifications in CI: a GitHub Action
 (`action.yml`) and a GitLab CI/CD component (`templates/jpipe-runner.yml`). GitHub is the
-source of truth; GitLab is a pull mirror. Read
+source of truth; `.github/workflows/mirror.yml` pushes `main` and the tags to
+`gitlab.com/mcscert/jpipe-ci-actions`, which is never pushed to directly. Read
 [ADR-0001](docs/adr/0001-one-repository-two-front-ends.md) before changing the layout.
 
 ## Rules

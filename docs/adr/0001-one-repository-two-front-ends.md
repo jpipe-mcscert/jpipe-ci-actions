@@ -27,8 +27,11 @@ The two platforms package reusable CI differently:
 ## Decision
 
 - One repository hosts both front ends: `action.yml` for GitHub, `templates/` for GitLab.
-- **GitHub is the source of truth.** The GitLab project is a pull mirror of it; nobody
-  pushes to GitLab directly.
+- **GitHub is the source of truth.** A GitHub workflow (`.github/workflows/mirror.yml`)
+  pushes `main` and the tags to `gitlab.com/mcscert/jpipe-ci-actions` over SSH, with a
+  GitLab deploy key that has write access. Nobody pushes to GitLab directly, so the push
+  is never forced: a rejection means GitLab diverged, and a human looks at it. GitLab's
+  own pull mirroring would avoid the workflow, but it is a paid tier on GitLab.com.
 - Front ends stay thin. Behaviour shared by both lives in `scripts/`, written against
   plain environment variables, with no platform variables. Each front end maps its inputs
   to those variables. Platform-only features (a PR comment on GitHub, an MR note on
@@ -57,5 +60,8 @@ template inlines its commands.
 - One CHANGELOG and one version number cover both platforms.
 - A change to one front end is incomplete until the other matches it, or the difference
   is documented as platform-only.
-- The mirror needs one-time manual setup on GitLab (see README, *Maintainers*), and
-  pipelines for mirror updates must be enabled, or tags will not be released there.
+- The mirror needs one-time manual setup on both sides (see README, *Maintainers*): a
+  deploy key on GitLab allowed to push to `main`, and its private half as a GitHub
+  secret. Rotating the key means updating both.
+- Only `main` and the tags reach GitLab, so the GitLab pipeline tests the component after
+  a merge, not on pull requests.

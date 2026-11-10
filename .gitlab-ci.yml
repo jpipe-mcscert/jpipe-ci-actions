@@ -1,6 +1,6 @@
-# Pipeline of the GitLab mirror. GitHub is the source of truth (docs/adr/0001): this
-# file only tests the component as GitLab sees it and publishes it to the CI/CD
-# Catalog when a release tag arrives through the mirror.
+# Pipeline of the GitLab mirror. GitHub is the source of truth (docs/adr/0001) and
+# pushes here through .github/workflows/mirror.yml: this file only tests the component
+# as GitLab sees it and publishes it to the CI/CD Catalog when a release tag arrives.
 
 stages: [test, release]
 

@@ -1,0 +1,53 @@
+name: Mirror to GitLab
+
+# Replicates main and the tags to gitlab.com/mcscert/jpipe-ci-actions, where
+# .gitlab-ci.yml tests the component and publishes Catalog releases (docs/adr/0001).
+#
+# Needs the GITLAB_MIRROR_SSH_KEY secret: the private half of a GitLab deploy key with
+# write access, allowed to push to the protected main branch (see README, Maintainers).
+
+on:
+  push:
+    branches: [main]
+    tags: ["*"]
+  workflow_dispatch:   # resynchronise by hand, e.g. after rotating the key
+
+# Never let two pushes to GitLab race each other.
+concurrency:
+  group: mirror-gitlab
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    # A dispatch from a feature branch must not publish that branch.
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # full history and every tag, so GitLab gets them all
+
+      - name: Configure SSH for gitlab.com
+        env:
+          GITLAB_MIRROR_SSH_KEY: ${{ secrets.GITLAB_MIRROR_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$GITLAB_MIRROR_SSH_KEY" > ~/.ssh/gitlab_mirror
+          chmod 600 ~/.ssh/gitlab_mirror
+          # Pinned host key, published at
+          # https://docs.gitlab.com/user/gitlab_com/#ssh-known_hosts-entries
+          # (no ssh-keyscan: trusting whatever answers defeats host verification).
+          echo "gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf" >> ~/.ssh/known_hosts
+
+      - name: Push to GitLab
+        env:
+          GIT_SSH_COMMAND: ssh -i ~/.ssh/gitlab_mirror -o IdentitiesOnly=yes
+        run: |
+          git remote add gitlab git@gitlab.com:mcscert/jpipe-ci-actions.git
+          # No --force: GitLab is never pushed to directly, so a rejected push means it
+          # diverged, and that needs a human, not an overwrite. Pushing every tag each
+          # time also catches up any tag a failed run missed.
+          git push gitlab "${GITHUB_REF}:${GITHUB_REF}" --tags

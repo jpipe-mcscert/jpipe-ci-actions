@@ -3,7 +3,7 @@
 # Usage, from a consumer's .gitlab-ci.yml:
 #
 #   include:
-#     - component: $CI_SERVER_FQDN/<group>/jpipe-ci-actions/jpipe-runner@<version>
+#     - component: gitlab.com/mcscert/jpipe-ci-actions/jpipe-runner@<version>
 #       inputs:
 #         working-directory: path/to/model
 #
