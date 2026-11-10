@@ -47,7 +47,12 @@ jobs:
           GIT_SSH_COMMAND: ssh -i ~/.ssh/gitlab_mirror -o IdentitiesOnly=yes
         run: |
           git remote add gitlab git@gitlab.com:mcscert/jpipe-ci-actions.git
+          # Every run pushes the current main and every tag, whatever triggered it. The
+          # concurrency group keeps one pending run and cancels the one it replaces, so
+          # a run must not rely on its own event: a tag run that supersedes a pending
+          # main run still brings main up to date. This also catches up anything a
+          # failed run missed.
+          #
           # No --force: GitLab is never pushed to directly, so a rejected push means it
-          # diverged, and that needs a human, not an overwrite. Pushing every tag each
-          # time also catches up any tag a failed run missed.
-          git push gitlab "${GITHUB_REF}:${GITHUB_REF}" --tags
+          # diverged, and that needs a human, not an overwrite.
+          git push gitlab refs/remotes/origin/main:refs/heads/main --tags

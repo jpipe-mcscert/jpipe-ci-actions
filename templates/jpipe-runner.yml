@@ -20,9 +20,20 @@ spec:
 jpipe-runner:
   stage: $[[ inputs.stage ]]
   image: python:3.11-slim
+  # Inputs reach the shell through variables, never interpolated into `script`: an
+  # interpolated value is shell source, so `$(...)` in a directory name would run.
+  # `expand: false` also stops GitLab expanding `$VAR` inside the value.
+  variables:
+    JPIPE_WORKING_DIRECTORY:
+      value: $[[ inputs.working-directory ]]
+      expand: false
+  # Script lines are block scalars: a plain YAML line containing ": " parses as a
+  # mapping, which GitLab rejects.
   script:
-    - cd "$[[ inputs.working-directory ]]"
+    - |
+      cd "$JPIPE_WORKING_DIRECTORY"
     # The job runs in the consumer's project, where scripts/ from this repository is
     # not checked out; how it reaches the job is open (docs/adr/0001). Until then the
     # placeholder is inlined.
-    - echo "jpipe-ci-actions: scaffold, no behaviour yet (running in $(pwd))."
+    - |
+      echo "jpipe-ci-actions: scaffold, no behaviour yet (running in $(pwd))."

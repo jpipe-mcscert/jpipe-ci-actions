@@ -13,6 +13,12 @@ source of truth; `.github/workflows/mirror.yml` pushes `main` and the tags to
   input only makes sense on one platform; say so in a comment next to it.
 - **Shared logic goes in `scripts/`**, reading plain environment variables. No
   `GITHUB_*` or `CI_*` variables there; platform-specific steps stay in their front end.
+- **Never interpolate a GitLab input into `script`.** `$[[ inputs.x ]]` becomes shell
+  source there, so `$(...)` in a value runs. Pass it through a job variable with
+  `expand: false` and quote the variable. Same on GitHub: pass `${{ inputs.x }}` to a
+  `run:` step through `env:`, never inline.
+- **Write GitLab `script` lines as block scalars (`- |`).** A plain YAML line containing
+  `: ` parses as a mapping, and GitLab then refuses the whole pipeline.
 - **Release tags are plain semver** (`1.2.3`, no `v`): the GitLab CI/CD Catalog rejects
   anything else.
 - Shell scripts must pass `shellcheck`; workflows must pass `actionlint`.
