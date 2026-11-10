@@ -58,8 +58,9 @@ One-time setup of the mirror:
 2. On GitLab, *Settings → Repository → Deploy keys*: add `gitlab_mirror.pub` and tick
    **Grant write permissions to this key**.
 3. If the GitLab project is empty, it has no `main` yet, so there is nothing to protect.
-   Seed it once from a clone, as a Maintainer, with GitHub's `main` (the same commit, so
-   the mirror only adds to it later):
+   Seed it once with GitHub's `main` (the same commit, so the mirror only adds to it
+   later), as a GitLab Maintainer, from a clone of the **GitHub** repository (its
+   `origin` must be GitHub; a GitLab clone is empty and has nothing to push):
    `git fetch origin && git push git@gitlab.com:mcscert/jpipe-ci-actions.git origin/main:refs/heads/main`
 4. On GitLab, *Settings → Repository → Protected branches*: in the `main` row, open
    *Allowed to push and merge* and tick the deploy key. Do the same under *Protected
