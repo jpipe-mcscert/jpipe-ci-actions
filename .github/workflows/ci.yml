@@ -20,30 +20,19 @@ jobs:
       - name: Lint shell scripts
         run: shellcheck scripts/*.sh github/*.sh
 
-  unit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Test the scripts
-        run: python -m unittest discover -s tests -v
-
-  # Runs the action from this checkout, on every push and pull request, without
-  # commenting. The pull request scenarios are in test-action.yml.
+  # Runs the action from this checkout on the example, with the real runner: catches a
+  # broken wiring in action.yml, and a change in the runner (installed from its main
+  # branch until 4.0.0) that the action does not follow.
   self-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Run the action from this checkout
+      - name: Run the action on the example
         id: run
         uses: ./
         with:
-          working-directory: tests/action/release
+          working-directory: example
           justification: justification.json
           library: steps.py
           dataflow: "true"
@@ -62,3 +51,35 @@ jobs:
             [[ -s "$file" ]] || { echo "::error::missing output file: '$file'"; exit 1; }
           done
           jq -e '.verdict == "pass" and .summary.pass == 4' "$REPORT"
+
+  # Inputs reach the runner as literal arguments, never as shell source: the command
+  # injection fixed in jpipe-runner 3.5.0 must not come back. The run fails (the files do
+  # not exist); what matters is that none of the payloads ran.
+  hostile-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the action with shell syntax in its inputs
+        id: run
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: example
+          justification: "justification.json; touch INJECTED-justification"
+          library: |
+            steps.py
+            $(touch INJECTED-library)
+            `touch INJECTED-backtick`
+          python-path: |
+            src'; touch INJECTED-python-path; echo '
+          comment: "false"
+
+      - name: Check that nothing ran
+        env:
+          RESULT: ${{ steps.run.outputs.result }}
+        run: |
+          [[ -n "$RESULT" && "$RESULT" != "0" ]] || { echo "::error::expected the runner to refuse the inputs, got result '$RESULT'"; exit 1; }
+          injected="$(find "$GITHUB_WORKSPACE" "$RUNNER_TEMP" -name 'INJECTED*')"
+          [[ -z "$injected" ]] || { echo "::error::a payload ran: $injected"; exit 1; }
+          echo "the runner refused the inputs (exit code $RESULT), and no payload ran"

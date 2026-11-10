@@ -130,9 +130,8 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 | `templates/jpipe-runner.yml` | The GitLab CI/CD component, the counterpart of `action.yml` |
 | `scripts/` | Behaviour shared by both, free of platform-specific variables |
 | `github/` | Behaviour of the GitHub Action alone: committing the diagram, finding its URL |
-| `tests/` | Unit tests of the scripts (`python -m unittest discover -s tests`), and the fixtures the workflows run |
-| `.github/workflows/ci.yml` | Lints the repository, tests the scripts, and runs the action from the checkout |
-| `.github/workflows/test-action.yml` | Runs the action on a pull request, and checks its comment, exit code and diagram |
+| `example/` | A justification and its step library, which CI runs the action on |
+| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example, and checks that hostile inputs run nothing |
 | `.github/workflows/mirror.yml` | Pushes `main` and the tags to the GitLab mirror |
 | `.gitlab-ci.yml` | Runs on the GitLab mirror: tests the component, publishes Catalog releases |
 | `docs/adr/` | Architecture decision records |

@@ -18,10 +18,10 @@ source of truth; `.github/workflows/mirror.yml` pushes `main` and the tags to
   ([ADR-0002](docs/adr/0002-runner-4-github-first.md)): the parity rule above applies
   again once it runs the runner.
 - **The action reads jPipe Runner's JSON report**, never its text output, whose layout
-  may change: `scripts/comment.py` builds the comment from it. Test fixtures in
-  `tests/fixtures/` are real reports; regenerate them with the runner when its report
-  schema changes.
-- `python -m unittest discover -s tests` tests the scripts; CI runs it.
+  may change: `scripts/comment.py` builds the comment from it.
+- **Testing is running the action**, not unit tests: `ci.yml` runs it on `example/` with
+  the real runner, and with hostile inputs to guard against command injection. Don't add
+  tests of what the runner or GitHub do, nor of the comment's exact wording.
 - **Never interpolate a GitLab input into `script`.** `$[[ inputs.x ]]` becomes shell
   source there, so `$(...)` in a value runs. Pass it through a job variable with
   `expand: false` and quote the variable. Same on GitHub: pass `${{ inputs.x }}` to a
