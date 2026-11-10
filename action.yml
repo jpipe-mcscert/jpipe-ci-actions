@@ -1,0 +1,23 @@
+name: "jPipe Runner"
+description: "Run a jPipe justification in CI and report which claims hold"
+author: "jPipe (McSCert)"
+branding:
+  icon: "user-check"
+  color: "red"
+
+# Scaffold only: the inputs and steps of the runner action land here when it moves
+# out of jpipe-runner (jpipe-mcscert/jpipe-runner#130). Every input added here needs
+# its counterpart in templates/jpipe-runner.yml (see docs/adr/0001).
+inputs:
+  working-directory:
+    description: "Directory to run jPipe Runner from"
+    required: false
+    default: "."
+
+runs:
+  using: "composite"
+  steps:
+    - name: Run jPipe Runner
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: ${{ github.action_path }}/scripts/run.sh

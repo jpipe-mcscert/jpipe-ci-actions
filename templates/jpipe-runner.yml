@@ -1,0 +1,39 @@
+# GitLab CI/CD component: the GitLab counterpart of the GitHub Action in action.yml.
+#
+# Usage, from a consumer's .gitlab-ci.yml:
+#
+#   include:
+#     - component: gitlab.com/mcscert/jpipe-ci-actions/jpipe-runner@<version>
+#       inputs:
+#         working-directory: path/to/model
+#
+# Scaffold only. Every input here mirrors an input of action.yml (see docs/adr/0001).
+spec:
+  inputs:
+    stage:
+      description: "Pipeline stage the job runs in"
+      default: test
+    working-directory:
+      description: "Directory to run jPipe Runner from"
+      default: "."
+---
+jpipe-runner:
+  stage: $[[ inputs.stage ]]
+  image: python:3.11-slim
+  # Inputs reach the shell through variables, never interpolated into `script`: an
+  # interpolated value is shell source, so `$(...)` in a directory name would run.
+  # `expand: false` also stops GitLab expanding `$VAR` inside the value.
+  variables:
+    JPIPE_WORKING_DIRECTORY:
+      value: $[[ inputs.working-directory ]]
+      expand: false
+  # Script lines are block scalars: a plain YAML line containing ": " parses as a
+  # mapping, which GitLab rejects.
+  script:
+    - |
+      cd "$JPIPE_WORKING_DIRECTORY"
+    # The job runs in the consumer's project, where scripts/ from this repository is
+    # not checked out; how it reaches the job is open (docs/adr/0001). Until then the
+    # placeholder is inlined.
+    - |
+      echo "jpipe-ci-actions: scaffold, no behaviour yet (running in $(pwd))."

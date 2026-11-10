@@ -1,0 +1,29 @@
+# Pipeline of the GitLab mirror. GitHub is the source of truth (docs/adr/0001) and
+# pushes here through .github/workflows/mirror.yml: this file only tests the component
+# as GitLab sees it and publishes it to the CI/CD Catalog when a release tag arrives.
+
+stages: [test, release]
+
+include:
+  # Test the component from this very commit, as a consumer would include it.
+  - component: $CI_SERVER_FQDN/$CI_PROJECT_PATH/jpipe-runner@$CI_COMMIT_SHA
+    inputs:
+      stage: test
+
+lint-scripts:
+  stage: test
+  image: koalaman/shellcheck-alpine:stable
+  script:
+    - shellcheck scripts/*.sh
+
+# The CI/CD Catalog only publishes semantic-version tags without a "v" prefix.
+create-release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^\d+\.\d+\.\d+$/
+  script:
+    - echo "Publishing $CI_COMMIT_TAG to the CI/CD Catalog"
+  release:
+    tag_name: $CI_COMMIT_TAG
+    description: "jpipe-ci-actions $CI_COMMIT_TAG. See CHANGELOG.md."
