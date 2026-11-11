@@ -46,7 +46,7 @@ inputs:
   runner-version:
     description: "jPipe Runner to install: a release on PyPI (4.0.0), or a git ref of its repository (main, a commit)"
     required: false
-    default: "main"
+    default: "4.0.0"
   artifact-name:
     description: "Name of the artifact holding the reports and the diagrams; by default jpipe-runner-<job>. Set it to run the action twice in one job"
     required: false

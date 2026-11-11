@@ -11,8 +11,7 @@ artifact.
 > [!NOTE]
 > **GitHub first.** The GitHub Action runs jPipe Runner 4. The GitLab CI/CD component
 > (`templates/jpipe-runner.yml`) is still a scaffold that runs nothing
-> ([ADR-0002](docs/adr/0002-runner-4-github-first.md)). jPipe Runner 4 is not on PyPI
-> yet: the action installs it from its repository until it is.
+> ([ADR-0002](docs/adr/0002-runner-4-github-first.md)).
 
 ## Usage
 
@@ -82,7 +81,7 @@ include:
 | `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. |
 | `dataflow` | `false` | Also draw the dataflow diagram: the files and variables the steps declare. |
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11. |
-| `runner-version` | `main` | jPipe Runner to install: a release on PyPI (`4.0.0`), or a git ref of its repository. |
+| `runner-version` | `4.0.0` | jPipe Runner to install: a release on PyPI (`4.0.0`), or a git ref of its repository. |
 | `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. |
 | `comment` | `true` | Comment on the pull request. |
 | `embed-image` | `false` | Commit the diagram to `image-branch`, and show it in the comment. |

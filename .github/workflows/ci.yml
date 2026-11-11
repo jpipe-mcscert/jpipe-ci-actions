@@ -21,8 +21,8 @@ jobs:
         run: shellcheck scripts/*.sh github/*.sh
 
   # Runs the action from this checkout on the example, with the real runner: catches a
-  # broken wiring in action.yml, and a change in the runner (installed from its main
-  # branch until 4.0.0) that the action does not follow.
+  # broken wiring in action.yml, and a runner release (the default `runner-version`)
+  # that the action does not follow.
   self-test:
     runs-on: ubuntu-latest
     steps:
