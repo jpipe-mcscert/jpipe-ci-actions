@@ -18,9 +18,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# GitHub refuses a comment longer than 65,536 characters; the folded text report and log
-# are cut to leave room for the rest.
-_FOLDED_LIMIT = 20_000
+# GitHub refuses a comment longer than 65,536 characters, and the pull request then gets
+# no report. Every part that grows with the model or the run has its own share, so that
+# together they stay under it, with room left for the headline, the summary and the links:
+# the elements that did not pass and the diagnostics are listed up to 15,000 characters
+# each, and the folded text report and log are cut at 12,000 each.
+_LISTED_LIMIT = 15_000
+_FOLDED_LIMIT = 12_000
 
 _HEADLINES = {
     "pass": "✔ {subject} holds",
@@ -98,7 +102,9 @@ def _stopped(report: dict[str, Any]) -> str:
     ]
     if not rows:
         return ""
-    return "\n".join(["| | Element | Id | Why |", "|---|---|---|---|", *rows])
+    rows, more = _bounded(rows, "element")
+    table = "\n".join(["| | Element | Id | Why |", "|---|---|---|---|", *rows])
+    return f"{table}\n\n{more}" if more else table
 
 
 def _diagnostics(report: dict[str, Any]) -> str:
@@ -109,7 +115,19 @@ def _diagnostics(report: dict[str, Any]) -> str:
         if diagnostic["fix"]:
             item += f"\n  Fix: {diagnostic['fix']}"
         items.append(item)
-    return "\n".join(items)
+    items, more = _bounded(items, "diagnostic")
+    return "\n".join([*items, *([f"\n{more}"] if more else [])])
+
+
+def _bounded(items: list[str], noun: str) -> tuple[list[str], str]:
+    """The first ``items`` that fit in ``_LISTED_LIMIT``, and a line saying what was left out."""
+    size = 0
+    for kept, item in enumerate(items):
+        size += len(item) + 1
+        if size > _LISTED_LIMIT:
+            left = _counted(len(items) - kept, noun)
+            return items[:kept], f"… {left} not shown: see the JSON report in the artifact."
+    return items, ""
 
 
 def _diagram(result: int, image_url: str, artifact_url: str) -> str:

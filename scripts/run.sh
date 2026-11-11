@@ -57,6 +57,9 @@ if [[ -n "$format" ]]; then
 fi
 command+=(--report "$report" --colour never "$justification")
 
+# A file left by an earlier run in the same folder would be reported as this run's.
+rm -f -- "$report" "$text" "$log" ${diagram:+"$diagram"} ${dataflow:+"$dataflow"}
+
 # %q shows each argument as the shell would need it quoted, so the log is unambiguous.
 printf 'Running:'
 printf ' %q' "${command[@]}"

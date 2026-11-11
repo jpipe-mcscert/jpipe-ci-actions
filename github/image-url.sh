@@ -18,6 +18,11 @@ set -uo pipefail
 api="https://api.github.com"
 auth="Authorization: Bearer ${GITHUB_TOKEN:-}"
 
+# Percent-encoded, so that a space, '#', '?' or '&' in a name cannot break the URL. In a
+# path, each segment is encoded and its slashes kept; in a query, the slashes are encoded.
+segments() { jq -rn --arg value "$1" '$value | split("/") | map(@uri) | join("/")'; }
+query() { jq -rn --arg value "$1" '$value | @uri'; }
+
 private="true"
 if repository="$(curl -fsS -H "$auth" "${api}/repos/${IMAGE_REPO}")"; then
   [[ "$(jq -r '.private' <<< "$repository")" == "false" ]] && private="false"
@@ -26,13 +31,13 @@ else
 fi
 
 if [[ "$private" == "false" ]]; then
-  echo "https://raw.githubusercontent.com/${IMAGE_REPO}/${IMAGE_BRANCH}/${IMAGE_PATH}"
+  echo "https://raw.githubusercontent.com/${IMAGE_REPO}/$(segments "$IMAGE_BRANCH")/$(segments "$IMAGE_PATH")"
   exit 0
 fi
 
 # The contents API may not serve a file pushed a moment ago: try a few times.
 for attempt in 1 2 3; do
-  if contents="$(curl -fsS -H "$auth" "${api}/repos/${IMAGE_REPO}/contents/${IMAGE_PATH}?ref=${IMAGE_BRANCH}")"; then
+  if contents="$(curl -fsS -H "$auth" "${api}/repos/${IMAGE_REPO}/contents/$(segments "$IMAGE_PATH")?ref=$(query "$IMAGE_BRANCH")")"; then
     url="$(jq -r '.download_url // empty' <<< "$contents")"
     if [[ -n "$url" ]]; then
       echo "$url"
