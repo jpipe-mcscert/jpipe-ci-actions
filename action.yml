@@ -5,19 +5,235 @@ branding:
   icon: "user-check"
   color: "red"
 
-# Scaffold only: the inputs and steps of the runner action land here when it moves
-# out of jpipe-runner (jpipe-mcscert/jpipe-runner#130). Every input added here needs
-# its counterpart in templates/jpipe-runner.yml (see docs/adr/0001).
+# Every input needs its counterpart in templates/jpipe-runner.yml (docs/adr/0001). For
+# now the GitLab component is still a scaffold, and this action is the only front end
+# that runs anything: the inputs below are not mirrored there yet.
 inputs:
+  justification:
+    description: "The justification: the JSON file the jPipe compiler writes (jpipe process -f JSON), relative to working-directory"
+    required: true
+  library:
+    description: "The step libraries, one per line: Python files, or globs of files"
+    required: true
+  python-path:
+    description: "Directories the step libraries import modules from, one per line"
+    required: false
+    default: ""
   working-directory:
-    description: "Directory to run jPipe Runner from"
+    description: "Directory to run jPipe Runner from: the paths the evidence observes are relative to it"
     required: false
     default: "."
+  strict:
+    description: "If true, count validation warnings as errors, and fail a skipped justification"
+    required: false
+    default: "false"
+  dry-run:
+    description: "If true, validate the step libraries against the justification, and call no step"
+    required: false
+    default: "false"
+  diagram-format:
+    description: "Format of the diagram drawn of the run: svg, png, pdf, dot, jpg, jpeg or gif; empty for none"
+    required: false
+    default: "svg"
+  dataflow:
+    description: "If true, also draw the dataflow diagram: the files and variables the steps declare"
+    required: false
+    default: "false"
+  python-executable:
+    description: "Python interpreter to run jPipe Runner with, which sees the packages the step libraries import; by default the action sets up Python 3.11"
+    required: false
+    default: ""
+  runner-version:
+    description: "jPipe Runner to install: a release on PyPI (4.0.0), or a git ref of its repository (main, a commit)"
+    required: false
+    default: "4.0.0"
+  artifact-name:
+    description: "Name of the artifact holding the reports and the diagrams; by default jpipe-runner-<job>. Set it to run the action twice in one job"
+    required: false
+    default: ""
+  comment:
+    description: "If true, post the result as a comment on the pull request (GitHub only)"
+    required: false
+    default: "true"
+  embed-image:
+    description: "If true, commit the diagram to image-branch and show it in the comment (GitHub only)"
+    required: false
+    default: "false"
+  image-repo:
+    description: "Repository (owner/name) the diagram is committed to; by default this one (GitHub only)"
+    required: false
+    default: ""
+  image-branch:
+    description: "Branch the diagram is committed to, created as an orphan if it does not exist (GitHub only)"
+    required: false
+    default: "jpipe-runner-diagrams"
+  image-path:
+    description: "Folder the diagram is committed to, under a folder named after this repository (GitHub only)"
+    required: false
+    default: "diagrams"
+  image-commit-message:
+    description: "Message of the commit that adds the diagram (GitHub only)"
+    required: false
+    default: "Add a diagram drawn by jPipe Runner"
+  github-token:
+    description: "Token that posts the comment and commits the diagram: pull-requests and contents write (GitHub only)"
+    required: false
+    default: ${{ github.token }}
+  github-readonly-token:
+    description: "Read-only token that gets the diagram's URL in a private image-repo; by default github-token (GitHub only)"
+    required: false
+    default: ""
+
+outputs:
+  result:
+    description: "jPipe Runner's exit code: 0 holds, 1 fails, 2 usage error, 3 nothing could run, 4 a file could not be read or written"
+    value: ${{ steps.run.outputs.result }}
+  verdict:
+    description: "The verdict of the run: pass, fail, skip, valid (a dry run) or invalid; empty if there is no report"
+    value: ${{ steps.run.outputs.verdict }}
+  report:
+    description: "Path to the JSON report, if one was written"
+    value: ${{ steps.run.outputs.report }}
+  diagram:
+    description: "Path to the diagram, if one was drawn"
+    value: ${{ steps.run.outputs.diagram }}
+  dataflow:
+    description: "Path to the dataflow diagram, if one was drawn"
+    value: ${{ steps.run.outputs.dataflow }}
+  comment-id:
+    description: "ID of the pull request comment posted, if one was"
+    value: ${{ steps.post.outputs.comment-id }}
 
 runs:
   using: "composite"
   steps:
+    - name: Install Graphviz
+      if: ${{ inputs.diagram-format != '' && inputs.diagram-format != 'dot' }}
+      shell: bash
+      run: |
+        # Only the dot program is needed. Most GitHub-hosted images have it already.
+        if command -v dot > /dev/null; then
+          echo "Graphviz is installed: $(dot -V 2>&1)"
+        else
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq graphviz > /dev/null
+          echo "Graphviz installed: $(dot -V 2>&1)"
+        fi
+
+    - name: Set up Python
+      id: python
+      if: ${{ inputs.python-executable == '' }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.11"
+
+    - name: Install jPipe Runner
+      shell: bash
+      env:
+        JPIPE_PYTHON: ${{ inputs.python-executable || steps.python.outputs.python-path }}
+        JPIPE_RUNNER_VERSION: ${{ inputs.runner-version }}
+      run: ${{ github.action_path }}/scripts/install.sh
+
+    # A folder of its own: a second run in the same job (see artifact-name) must neither
+    # report nor upload the files of the first.
+    - name: Make a folder for the run
+      id: folder
+      shell: bash
+      run: echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")" >> "$GITHUB_OUTPUT"
+
     - name: Run jPipe Runner
+      id: run
       shell: bash
       working-directory: ${{ inputs.working-directory }}
-      run: ${{ github.action_path }}/scripts/run.sh
+      env:
+        JPIPE_PYTHON: ${{ inputs.python-executable || steps.python.outputs.python-path }}
+        JPIPE_JUSTIFICATION: ${{ inputs.justification }}
+        JPIPE_LIBRARY: ${{ inputs.library }}
+        JPIPE_PYTHON_PATH: ${{ inputs.python-path }}
+        JPIPE_STRICT: ${{ inputs.strict }}
+        JPIPE_DRY_RUN: ${{ inputs.dry-run }}
+        JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
+        JPIPE_DATAFLOW: ${{ inputs.dataflow }}
+        # The pull request's head, for a pull request; the commit that ran, otherwise.
+        JPIPE_SUFFIX: ${{ github.event.pull_request.head.sha || github.sha }}
+        JPIPE_OUTPUT_DIR: ${{ steps.folder.outputs.path }}
+      run: JPIPE_OUTPUTS="$GITHUB_OUTPUT" "${{ github.action_path }}/scripts/run.sh"
+
+    - name: Upload the reports and the diagrams
+      id: upload
+      if: ${{ always() && steps.run.outputs.text != '' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name || format('jpipe-runner-{0}', github.job) }}
+        path: ${{ steps.folder.outputs.path }}
+
+    - name: Commit the diagram
+      id: image
+      if: ${{ inputs.embed-image == 'true' && steps.run.outputs.diagram != '' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        READONLY_TOKEN: ${{ inputs.github-readonly-token || inputs.github-token }}
+        IMAGE_FILE: ${{ steps.run.outputs.diagram }}
+        IMAGE_REPO: ${{ inputs.image-repo || github.repository }}
+        IMAGE_BRANCH: ${{ inputs.image-branch }}
+        # Under a folder named after this repository, so that one image-repo can hold
+        # the diagrams of several projects.
+        IMAGE_FOLDER: ${{ github.event.repository.name }}_${{ inputs.image-path }}
+        IMAGE_COMMIT_MESSAGE: ${{ inputs.image-commit-message }}
+      run: |
+        "${{ github.action_path }}/github/commit-diagram.sh"
+        IMAGE_PATH="${IMAGE_FOLDER%/}/$(basename "$IMAGE_FILE")"
+        url="$(GITHUB_TOKEN="$READONLY_TOKEN" IMAGE_PATH="$IMAGE_PATH" "${{ github.action_path }}/github/image-url.sh")"
+        echo "url=$url" >> "$GITHUB_OUTPUT"
+
+    - name: Write the comment
+      id: comment
+      if: ${{ always() && steps.run.outputs.text != '' }}
+      shell: bash
+      env:
+        JPIPE_PYTHON: ${{ inputs.python-executable || steps.python.outputs.python-path }}
+        RESULT: ${{ steps.run.outputs.result }}
+        REPORT: ${{ steps.run.outputs.report }}
+        TEXT: ${{ steps.run.outputs.text }}
+        LOG: ${{ steps.run.outputs.log }}
+        IMAGE_URL: ${{ steps.image.outputs.url }}
+        ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        # Next to the run's folder, not in it: the comment is not part of the artifact.
+        COMMENT: ${{ steps.folder.outputs.path }}-comment.md
+      run: |
+        "$JPIPE_PYTHON" "${{ github.action_path }}/scripts/comment.py" \
+          --result "$RESULT" --report "$REPORT" --text "$TEXT" --log "$LOG" \
+          --image-url "$IMAGE_URL" --artifact-url "$ARTIFACT_URL" > "$COMMENT"
+        cat "$COMMENT" >> "$GITHUB_STEP_SUMMARY"
+        echo "path=$COMMENT" >> "$GITHUB_OUTPUT"
+
+    - name: Post the comment on the pull request
+      id: post
+      if: ${{ always() && inputs.comment == 'true' && github.event.pull_request && steps.comment.outputs.path != '' }}
+      uses: actions/github-script@v9
+      env:
+        COMMENT: ${{ steps.comment.outputs.path }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const body = require("fs").readFileSync(process.env.COMMENT, "utf8");
+          try {
+            const { data } = await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+            core.setOutput("comment-id", String(data.id));
+          } catch (error) {
+            // A token without pull-requests: write, or a pull request from a fork: the
+            // run is reported in the job summary anyway.
+            core.warning(`Could not comment on the pull request: ${error.message}`);
+          }
+
+    - name: Exit with jPipe Runner's code
+      if: ${{ steps.run.outputs.result != '0' }}
+      shell: bash
+      env:
+        RESULT: ${{ steps.run.outputs.result }}
+      run: exit "${RESULT:-1}"

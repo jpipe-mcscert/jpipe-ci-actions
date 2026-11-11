@@ -18,12 +18,108 @@ jobs:
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
 
       - name: Lint shell scripts
-        run: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh github/*.sh
 
+  # Runs the action from this checkout on the example, with the real runner: catches a
+  # broken wiring in action.yml, and a runner release (the default `runner-version`)
+  # that the action does not follow.
   self-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Run the action from this checkout
+      - name: Run the action on the example
+        id: run
         uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          dataflow: "true"
+          comment: "false"
+
+      - name: Check its outputs
+        env:
+          RESULT: ${{ steps.run.outputs.result }}
+          VERDICT: ${{ steps.run.outputs.verdict }}
+          REPORT: ${{ steps.run.outputs.report }}
+          DIAGRAM: ${{ steps.run.outputs.diagram }}
+          DATAFLOW: ${{ steps.run.outputs.dataflow }}
+        run: |
+          [[ "$RESULT" == "0" && "$VERDICT" == "pass" ]] || { echo "::error::result $RESULT, verdict $VERDICT"; exit 1; }
+          for file in "$REPORT" "$DIAGRAM" "$DATAFLOW"; do
+            [[ -s "$file" ]] || { echo "::error::missing output file: '$file'"; exit 1; }
+          done
+          jq -e '.verdict == "pass" and .summary.pass == 4' "$REPORT"
+
+  # Two runs in one job, as artifact-name allows: the second stops before writing anything,
+  # and must not report the first run's report or diagram as its own.
+  two-runs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: First run, on the example
+        id: first
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          artifact-name: jpipe-runner-first
+          comment: "false"
+
+      - name: Second run, on a justification that does not exist
+        id: second
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: example
+          justification: missing.json
+          library: steps.py
+          artifact-name: jpipe-runner-second
+          comment: "false"
+
+      - name: Check that each run reports its own files
+        env:
+          FIRST_REPORT: ${{ steps.first.outputs.report }}
+          SECOND_RESULT: ${{ steps.second.outputs.result }}
+          SECOND_VERDICT: ${{ steps.second.outputs.verdict }}
+          SECOND_REPORT: ${{ steps.second.outputs.report }}
+          SECOND_DIAGRAM: ${{ steps.second.outputs.diagram }}
+        run: |
+          [[ -n "$SECOND_RESULT" && "$SECOND_RESULT" != "0" ]] || { echo "::error::expected the second run to fail, got result '$SECOND_RESULT'"; exit 1; }
+          [[ -z "$SECOND_VERDICT$SECOND_REPORT$SECOND_DIAGRAM" ]] || { echo "::error::the second run reports files it did not write: verdict '$SECOND_VERDICT', report '$SECOND_REPORT', diagram '$SECOND_DIAGRAM'"; exit 1; }
+          jq -e '.verdict == "pass"' "$FIRST_REPORT"
+
+  # Inputs reach the runner as literal arguments, never as shell source: the command
+  # injection fixed in jpipe-runner 3.5.0 must not come back. The run fails (the files do
+  # not exist); what matters is that none of the payloads ran.
+  hostile-inputs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the action with shell syntax in its inputs
+        id: run
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: example
+          justification: "justification.json; touch INJECTED-justification"
+          library: |
+            steps.py
+            $(touch INJECTED-library)
+            `touch INJECTED-backtick`
+          python-path: |
+            src'; touch INJECTED-python-path; echo '
+          comment: "false"
+
+      - name: Check that nothing ran
+        env:
+          RESULT: ${{ steps.run.outputs.result }}
+        run: |
+          [[ -n "$RESULT" && "$RESULT" != "0" ]] || { echo "::error::expected the runner to refuse the inputs, got result '$RESULT'"; exit 1; }
+          injected="$(find "$GITHUB_WORKSPACE" "$RUNNER_TEMP" -name 'INJECTED*')"
+          [[ -z "$injected" ]] || { echo "::error::a payload ran: $injected"; exit 1; }
+          echo "the runner refused the inputs (exit code $RESULT), and no payload ran"
