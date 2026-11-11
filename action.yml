@@ -1,4 +1,4 @@
-name: "jPipe Runner"
+name: "jPipe CI"
 description: "Run a jPipe justification in CI and report which claims hold"
 author: "jPipe (McSCert)"
 branding:

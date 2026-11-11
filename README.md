@@ -111,8 +111,9 @@ artifact as well.
 ### Coming from jpipe-runner's action
 
 The action that lived at jpipe-runner's root (`uses: jpipe-mcscert/jpipe-runner@v3.x`)
-ran jPipe Runner 3, and keeps working at its tags. This one runs jPipe Runner 4: change
-the `uses:` line, port the step libraries
+ran jPipe Runner 3, and keeps working at its tags, up to v3.6.0; on the GitHub
+Marketplace it is *jPipe Runner*, and this one is *jPipe CI*. This one runs jPipe
+Runner 4: change the `uses:` line, port the step libraries
 ([migration guide](https://github.com/jpipe-mcscert/jpipe-runner/blob/main/docs/migration-v3-v4.md)),
 and rename the inputs: `jd_file` is `justification`, `working_directory` is
 `working-directory`, `python_path` is `python-path`, `python_exec_path` is
