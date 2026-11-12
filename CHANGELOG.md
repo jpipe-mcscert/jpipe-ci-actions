@@ -10,7 +10,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - **The GitHub Action runs jPipe Runner 4**
-  ([ADR-0002](docs/adr/0002-runner-4-github-first.md)). It moves here from
+  ([ADR-0002](docs/adr/0002-runner-4-github-first.md)). Named *jPipe CI* on the GitHub
+  Marketplace, where *jPipe Runner* stays the v3 action (up to v3.6.0). It moves here from
   jpipe-runner's root, where it ran jPipe Runner 3 (jpipe-mcscert/jpipe-runner#130), and
   is rebuilt on the runner's JSON report (jpipe-mcscert/jpipe-runner#132). It installs the
   runner (`runner-version`: a PyPI release, `4.0.0` by default, or a git ref of its
