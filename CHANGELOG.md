@@ -8,15 +8,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-11
+
 ### Added
 - **The GitHub Action runs jPipe Runner 4**
-  ([ADR-0002](docs/adr/0002-runner-4-github-first.md)). Named *jPipe CI* on the GitHub
-  Marketplace, where *jPipe Runner* stays the v3 action (up to v3.6.0). It moves here from
-  jpipe-runner's root, where it ran jPipe Runner 3 (jpipe-mcscert/jpipe-runner#130), and
-  is rebuilt on the runner's JSON report (jpipe-mcscert/jpipe-runner#132). It installs the
-  runner (`runner-version`: a PyPI release, `4.0.0` by default, or a git ref of its
-  repository), runs a justification against its step libraries, fails the job with the runner's exit
-  code, and reports: a pull request comment with the verdict, the elements that did not
+  ([ADR-0002](docs/adr/0002-runner-4-github-first.md)). It is named *jPipe CI*; *jPipe
+  Runner* stays the name of the v3 action, in jpipe-runner's repository (up to v3.6.0).
+  It moves here from jpipe-runner's root, where it ran jPipe Runner 3
+  (jpipe-mcscert/jpipe-runner#130), and is rebuilt on the runner's JSON report
+  (jpipe-mcscert/jpipe-runner#132). It installs the runner (`runner-version`: a PyPI
+  release, `4.0.0` by default, or a git ref of its repository), runs a justification
+  against its step libraries, fails the job with the runner's exit code, and reports: a pull request comment with the verdict, the elements that did not
   pass and why, every diagnostic with its fix, and the text report; the same as the job's
   summary; and the reports and diagrams as an artifact. `embed-image` commits the diagram
   to a branch and shows it in the comment, from a private repository too.
