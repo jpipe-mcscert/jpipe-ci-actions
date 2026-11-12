@@ -1,81 +1,27 @@
 name: Release
 
-# Prepares a release of the action and the component, by hand, from main. It stops at a
-# draft: the box that lists a release on the GitHub Marketplace can only be ticked in
-# GitHub's web interface, when the draft is published. Publishing creates the tag, which
-# mirror.yml carries to GitLab, where .gitlab-ci.yml publishes it to the CI/CD Catalog.
-#
-# Before running it, merge a pull request that turns [Unreleased] in CHANGELOG.md into
-# the version's section (## [1.2.3] - YYYY-MM-DD): its text becomes the release notes.
+# A pushed tag is the release: the action is usable at it at once, and mirror.yml carries
+# it to GitLab, where .gitlab-ci.yml publishes the component to the CI/CD Catalog. This
+# workflow only adds the GitHub release page, with the version's section of CHANGELOG.md
+# as its notes.
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Version to release: plain semver (1.2.3, no v), with its section in CHANGELOG.md"
-        required: true
+  push:
+    # Plain semver, no v: the GitLab CI/CD Catalog publishes nothing else.
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
 
 permissions:
-  contents: read
-
-concurrency:
-  group: release
-  cancel-in-progress: false
+  contents: write   # create the release
 
 jobs:
-  draft:
-    # A release is cut from main only.
-    if: github.ref == 'refs/heads/main'
+  release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write   # draft the release
-      actions: read     # read CI's result on this commit
     steps:
       - uses: actions/checkout@v7
 
-      - name: Check the version and the changelog
+      - name: Create the GitHub release
         env:
-          VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Plain semver: the GitLab CI/CD Catalog publishes nothing else.
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::'$VERSION' is not a plain semantic version (1.2.3, no v)"; exit 1; }
-          if [[ -n "$(git ls-remote --tags origin "refs/tags/$VERSION")" ]]; then
-            echo "::error::the tag $VERSION already exists"; exit 1
-          fi
-          if gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -qxF "$VERSION"; then
-            echo "::error::a release (or a draft) for $VERSION already exists"; exit 1
-          fi
-          # The version is checked above, so its dots are the only characters to escape.
-          grep -Eq "^## \[${VERSION//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md || {
-            echo "::error::CHANGELOG.md has no '## [$VERSION] - YYYY-MM-DD' section: merge one first"; exit 1
-          }
-
-      - name: Check the action's metadata against the Marketplace's rules
-        run: |
-          name="$(yq -r '.name // ""' action.yml)"
-          description="$(yq -r '.description // ""' action.yml)"
-          [[ -n "$name" ]] || { echo "::error::action.yml has no name"; exit 1; }
-          # The Marketplace's form refuses a longer description.
-          (( ${#description} > 0 && ${#description} <= 125 )) || {
-            echo "::error::action.yml's description must be 1 to 125 characters (it has ${#description})"; exit 1
-          }
-          [[ -n "$(yq -r '.branding.icon // ""' action.yml)" && -n "$(yq -r '.branding.color // ""' action.yml)" ]] || {
-            echo "::error::action.yml needs a branding icon and color for its Marketplace listing"; exit 1
-          }
-
-      - name: Check that CI passed on this commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          conclusion="$(gh run list --workflow ci.yml --commit "$GITHUB_SHA" --event push --limit 1 --json conclusion --jq '.[0].conclusion // ""')"
-          [[ "$conclusion" == "success" ]] || {
-            echo "::error::CI on $GITHUB_SHA is '${conclusion:-not finished or not run}', not success: wait for it, or fix main"; exit 1
-          }
-
-      - name: Draft the release
-        env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
         run: |
           notes="$RUNNER_TEMP/notes.md"
@@ -85,15 +31,8 @@ jobs:
             inside && /^## \[/ { exit }
             inside { print }
           ' CHANGELOG.md > "$notes"
-          # No --verify-tag: the tag does not exist yet, publishing the draft creates it.
-          url="$(gh release create "$VERSION" --draft --target "$GITHUB_SHA" --title "$VERSION" --notes-file "$notes")"
-          {
-            echo "## Draft release $VERSION"
-            echo
-            echo "Nothing is published yet. To publish:"
-            echo
-            echo "1. Open the draft: $url, and click **Edit** (the pencil)."
-            echo "2. Tick **Publish this Action to the GitHub Marketplace**, check the categories, and wait for *Everything looks good!*"
-            echo "3. Click **Publish release**. The tag $VERSION is created on $GITHUB_SHA; *Mirror to GitLab* then carries it to GitLab, which publishes the component to the CI/CD Catalog."
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "Drafted $url"
+          if ! grep -q '[^[:space:]]' "$notes"; then
+            echo "::warning::CHANGELOG.md has no section for $VERSION: the release links to the changelog instead"
+            echo "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$VERSION/CHANGELOG.md)." > "$notes"
+          fi
+          gh release create "$VERSION" --verify-tag --title "$VERSION" --notes-file "$notes"

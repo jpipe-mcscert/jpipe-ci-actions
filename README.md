@@ -133,7 +133,7 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 | `example/` | A justification and its step library, which CI runs the action on |
 | `.github/workflows/ci.yml` | Lints the repository, runs the action on the example, and checks that hostile inputs run nothing |
 | `.github/workflows/mirror.yml` | Pushes `main` and the tags to the GitLab mirror |
-| `.github/workflows/release.yml` | Drafts a release, run by hand: see Releasing |
+| `.github/workflows/release.yml` | Adds the GitHub release page when a version tag is pushed |
 | `.gitlab-ci.yml` | Runs on the GitLab mirror: tests the component, publishes Catalog releases |
 | `docs/adr/` | Architecture decision records |
 
@@ -174,17 +174,15 @@ no `v`: the GitLab CI/CD Catalog publishes nothing else.
 
 1. Merge a pull request that turns `## [Unreleased]` in `CHANGELOG.md` into
    `## [1.2.3] - YYYY-MM-DD`, and opens a new, empty `## [Unreleased]` above it.
-2. Once CI has passed on `main`, run *Actions → Release → Run workflow* on `main`, with
-   the version. It checks the version, the changelog, the action's metadata against the
-   Marketplace's rules, and CI's result, then drafts a release whose notes are the
-   version's section of the changelog. Nothing is published yet.
-3. Open the draft (the run's summary links it), click **Edit**, tick **Publish this
-   Action to the GitHub Marketplace**, and click **Publish release**. Only the web
-   interface can list a release on the Marketplace, which is why the workflow stops at a
-   draft.
+2. Tag `main` and push the tag: `git tag 1.2.3 && git push origin 1.2.3`.
 
-Publishing creates the tag: *Mirror to GitLab* pushes it to GitLab, whose pipeline
-publishes the component to the CI/CD Catalog.
+The tag is the release. On GitHub the action is usable at it at once
+(`uses: jpipe-mcscert/jpipe-ci-actions@1.2.3`), and `release.yml` adds a release page
+with the version's section of the changelog. *Mirror to GitLab* pushes the tag to
+GitLab, whose pipeline publishes the component to the CI/CD Catalog.
+
+The action is not listed on the GitHub Marketplace. To list a version, edit its release
+on GitHub and tick **Publish this Action to the GitHub Marketplace**.
 
 ## License
 
