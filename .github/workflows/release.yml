@@ -31,6 +31,10 @@ jobs:
             inside && /^## \[/ { exit }
             inside { print }
           ' CHANGELOG.md > "$notes"
+          # A link relative to the repository (docs/adr/...) would be relative to the
+          # release page: point it at the tagged file. A target with a scheme (it has a
+          # ':'), or starting with '/' or '#', is left alone.
+          sed -E -i "s|\\]\\(([^)#:/][^):]*)\\)|](https://github.com/$GITHUB_REPOSITORY/blob/$VERSION/\\1)|g" "$notes"
           if ! grep -q '[^[:space:]]' "$notes"; then
             echo "::warning::CHANGELOG.md has no section for $VERSION: the release links to the changelog instead"
             echo "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$VERSION/CHANGELOG.md)." > "$notes"
