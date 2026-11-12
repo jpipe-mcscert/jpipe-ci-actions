@@ -18,10 +18,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (jpipe-mcscert/jpipe-runner#130), and is rebuilt on the runner's JSON report
   (jpipe-mcscert/jpipe-runner#132). It installs the runner (`runner-version`: a PyPI
   release, `4.0.0` by default, or a git ref of its repository), runs a justification
-  against its step libraries, fails the job with the runner's exit code, and reports: a pull request comment with the verdict, the elements that did not
-  pass and why, every diagnostic with its fix, and the text report; the same as the job's
-  summary; and the reports and diagrams as an artifact. `embed-image` commits the diagram
-  to a branch and shows it in the comment, from a private repository too.
+  against its step libraries, fails the job with the runner's exit code, and reports: a
+  pull request comment with the verdict, the elements that did not pass and why, every
+  diagnostic with its fix, and the text report; the same as the job's summary; and the
+  reports and diagrams as an artifact. `embed-image` commits the diagram to a branch and
+  shows it in the comment, from a private repository too.
 - Inputs: `justification`, `library`, `python-path`, `working-directory`, `strict`,
   `dry-run`, `diagram-format`, `dataflow`, `python-executable`, `runner-version`,
   `artifact-name`, `comment`, `embed-image`, `image-repo`, `image-branch`, `image-path`,
