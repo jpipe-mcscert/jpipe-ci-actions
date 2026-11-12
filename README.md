@@ -133,6 +133,7 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 | `example/` | A justification and its step library, which CI runs the action on |
 | `.github/workflows/ci.yml` | Lints the repository, runs the action on the example, and checks that hostile inputs run nothing |
 | `.github/workflows/mirror.yml` | Pushes `main` and the tags to the GitLab mirror |
+| `.github/workflows/release.yml` | Adds the GitHub release page when a version tag is pushed |
 | `.gitlab-ci.yml` | Runs on the GitLab mirror: tests the component, publishes Catalog releases |
 | `docs/adr/` | Architecture decision records |
 
@@ -166,9 +167,22 @@ One-time setup of the mirror:
 7. Run *Mirror to GitLab* once by hand (*Actions → Mirror to GitLab → Run workflow*, on
    `main`) to check that the mirror can push.
 
-Releasing: push a tag of the form `1.2.3` (no `v` prefix: the GitLab CI/CD Catalog only
-publishes plain semantic versions). The mirror pushes it to GitLab, whose pipeline
-publishes the component.
+### Releasing
+
+One version covers the action and the component. Its tag is plain semver, `1.2.3`, with
+no `v`: the GitLab CI/CD Catalog publishes nothing else.
+
+1. Merge a pull request that turns `## [Unreleased]` in `CHANGELOG.md` into
+   `## [1.2.3] - YYYY-MM-DD`, and opens a new, empty `## [Unreleased]` above it.
+2. Tag `main` and push the tag: `git tag 1.2.3 && git push origin 1.2.3`.
+
+The tag is the release. On GitHub the action is usable at it at once
+(`uses: jpipe-mcscert/jpipe-ci-actions@1.2.3`), and `release.yml` adds a release page
+with the version's section of the changelog. *Mirror to GitLab* pushes the tag to
+GitLab, whose pipeline publishes the component to the CI/CD Catalog.
+
+The action is not listed on the GitHub Marketplace. To list a version, edit its release
+on GitHub and tick **Publish this Action to the GitHub Marketplace**.
 
 ## License
 

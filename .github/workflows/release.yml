@@ -1,0 +1,42 @@
+name: Release
+
+# A pushed tag is the release: the action is usable at it at once, and mirror.yml carries
+# it to GitLab, where .gitlab-ci.yml publishes the component to the CI/CD Catalog. This
+# workflow only adds the GitHub release page, with the version's section of CHANGELOG.md
+# as its notes.
+
+on:
+  push:
+    # Plain semver, no v: the GitLab CI/CD Catalog publishes nothing else.
+    tags: ["[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write   # create the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Create the GitHub release
+        env:
+          VERSION: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          # The version's section, without its heading, up to the next one.
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { inside = 1; next }
+            inside && /^## \[/ { exit }
+            inside { print }
+          ' CHANGELOG.md > "$notes"
+          # A link relative to the repository (docs/adr/...) would be relative to the
+          # release page: point it at the tagged file. A target with a scheme (it has a
+          # ':'), or starting with '/' or '#', is left alone.
+          sed -E -i "s|\\]\\(([^)#:/][^):]*)\\)|](https://github.com/$GITHUB_REPOSITORY/blob/$VERSION/\\1)|g" "$notes"
+          if ! grep -q '[^[:space:]]' "$notes"; then
+            echo "::warning::CHANGELOG.md has no section for $VERSION: the release links to the changelog instead"
+            echo "See [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$VERSION/CHANGELOG.md)." > "$notes"
+          fi
+          gh release create "$VERSION" --verify-tag --title "$VERSION" --notes-file "$notes"
