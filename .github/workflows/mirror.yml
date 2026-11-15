@@ -2,6 +2,8 @@ name: Mirror to GitLab
 
 # Replicates main and the tags to gitlab.com/mcscert/jpipe-ci-actions, where
 # .gitlab-ci.yml tests the component and publishes Catalog releases (docs/adr/0001).
+# Only released code goes there: main receives nothing but releases, merged from dev,
+# while dev and the work branches stay on GitHub.
 #
 # Needs the GITLAB_MIRROR_SSH_KEY secret: the private half of a GitLab deploy key with
 # write access, allowed to push to the protected main branch (see README, Maintainers).
@@ -22,7 +24,7 @@ permissions:
 
 jobs:
   mirror:
-    # A dispatch from a feature branch must not publish that branch.
+    # A dispatch from dev or a work branch must not publish that branch.
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:

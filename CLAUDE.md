@@ -28,8 +28,23 @@ source of truth; `.github/workflows/mirror.yml` pushes `main` and the tags to
   `run:` step through `env:`, never inline.
 - **Write GitLab `script` lines as block scalars (`- |`).** A plain YAML line containing
   `: ` parses as a mapping, and GitLab then refuses the whole pipeline.
-- **Release tags are plain semver** (`1.2.3`, no `v`): the GitLab CI/CD Catalog rejects
-  anything else.
 - Shell scripts (`scripts/`, `github/`) must pass `shellcheck`; workflows must pass
   `actionlint`.
 - Keep `CHANGELOG.md` (Keep a Changelog) in step; one entry covers both platforms.
+
+## Branches and pull requests
+
+This repository follows the jPipe workflow, described once for the organization in
+[CONTRIBUTING.md](https://github.com/jpipe-mcscert/.github/blob/main/CONTRIBUTING.md):
+`dev` is the default and integration branch, work branches are cut from it and come back
+through a pull request, and a release is a pull request from `dev` into `main`. Its
+*For AI assistants* section applies here. Specific to this repository:
+
+- `ci.yml` runs on pushes to `main` and `dev`, and on every pull request.
+- Only `main` and the tags reach the GitLab mirror (`mirror.yml`); `dev` and work
+  branches stay on GitHub. The GitLab pipeline therefore tests the component only once a
+  release is merged into `main`.
+- **Release tags are plain semver** (`1.2.3`, no `v`): the GitLab CI/CD Catalog rejects
+  anything else. The pushed tag is the release: `release.yml` adds the GitHub release
+  page, and the mirror carries the tag to GitLab, which publishes it to the Catalog. The
+  steps are in the README, *Releasing*.
