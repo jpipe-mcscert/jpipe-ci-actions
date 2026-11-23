@@ -37,8 +37,9 @@ source of truth; `.github/workflows/mirror.yml` pushes `main` and the tags to
 This repository follows the jPipe workflow, described once for the organization in
 [CONTRIBUTING.md](https://github.com/jpipe-mcscert/.github/blob/main/CONTRIBUTING.md):
 `dev` is the default and integration branch, work branches are cut from it and come back
-through a pull request, and a release is a pull request from `dev` into `main`. Its
-*For AI assistants* section applies here. Specific to this repository:
+through a pull request, and a release is a pull request from a `release/X.Y.Z` branch,
+cut from `dev`, into `main`, after which `main` is merged back into `dev`. Its *For AI
+assistants* section applies here. Specific to this repository:
 
 - `ci.yml` runs on pushes to `main` and `dev`, and on every pull request.
 - Only `main` and the tags reach the GitLab mirror (`mirror.yml`); `dev` and work

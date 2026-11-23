@@ -171,12 +171,14 @@ One-time setup of the mirror:
 One version covers the action and the component. Its tag is plain semver, `1.2.3`, with
 no `v`: the GitLab CI/CD Catalog publishes nothing else.
 
-1. On a work branch cut from `dev`, turn `## [Unreleased]` in `CHANGELOG.md` into
-   `## [1.2.3] - YYYY-MM-DD`, open a new, empty `## [Unreleased]` above it, and merge
-   that into `dev` through a pull request.
-2. Open the release pull request from `dev` into `main`, and merge it.
-3. Tag the merge commit on `main` and push the tag:
+1. Cut `release/1.2.3` from `dev`. On it, turn `## [Unreleased]` in `CHANGELOG.md` into
+   `## [1.2.3] - YYYY-MM-DD`, and open a new, empty `## [Unreleased]` above it.
+2. Open the release pull request from `release/1.2.3` into `main`. It does not go into
+   `dev` first: its diff is the whole release.
+3. Once a maintainer has merged it, tag the merge commit on `main` and push the tag:
    `git fetch origin && git tag 1.2.3 origin/main && git push origin 1.2.3`.
+4. Merge `main` back into `dev`, so that `dev` has the release commit and the next
+   release merges cleanly.
 
 The tag is the release. On GitHub the action is usable at it at once
 (`uses: jpipe-mcscert/jpipe-ci-actions@1.2.3`), and `release.yml` adds a release page
@@ -191,7 +193,7 @@ on GitHub and tick **Publish this Action to the GitHub Marketplace**.
 Work follows the jPipe
 [contributing guide](https://github.com/jpipe-mcscert/.github/blob/main/CONTRIBUTING.md):
 `dev` is the default branch, work branches are cut from it and come back through a pull
-request, and `main` holds released code.
+request, and `main` holds released code, which reaches it from a release branch.
 
 ## License
 
