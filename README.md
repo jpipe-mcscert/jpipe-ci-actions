@@ -175,8 +175,10 @@ no `v`: the GitLab CI/CD Catalog publishes nothing else.
    `## [1.2.3] - YYYY-MM-DD`, and open a new, empty `## [Unreleased]` above it.
 2. Open the release pull request from `release/1.2.3` into `main`. It does not go into
    `dev` first: its diff is the whole release.
-3. Once a maintainer has merged it, tag the merge commit on `main` and push the tag:
-   `git fetch origin && git tag 1.2.3 origin/main && git push origin 1.2.3`.
+3. Once a maintainer has merged it, wait for *Mirror to GitLab* to carry `main` to
+   GitLab, and for GitLab's pipeline on it to pass: it is the first to test the
+   component since the last release. Then tag the merge commit on `main` and push the
+   tag: `git fetch origin && git tag 1.2.3 origin/main && git push origin 1.2.3`.
 4. Merge `main` back into `dev`, so that `dev` has the release commit and the next
    release merges cleanly.
 

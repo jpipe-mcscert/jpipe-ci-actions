@@ -45,7 +45,8 @@ assistants* section applies here. Specific to this repository:
 - Only `main` and the tags reach the GitLab mirror (`mirror.yml`); `dev` and work
   branches stay on GitHub. The GitLab pipeline therefore tests the component only once a
   release is merged into `main`.
-- **Release tags are plain semver** (`1.2.3`, no `v`): the GitLab CI/CD Catalog rejects
-  anything else. The pushed tag is the release: `release.yml` adds the GitHub release
+- **Release tags are plain semver** (`1.2.3`, no `v`), unlike the org guide's `vX.Y.Z`:
+  the GitLab CI/CD Catalog rejects anything else, and `release.yml` runs on plain semver
+  tags only. The pushed tag is the release: `release.yml` adds the GitHub release
   page, and the mirror carries the tag to GitLab, which publishes it to the Catalog. The
   steps are in the README, *Releasing*.
