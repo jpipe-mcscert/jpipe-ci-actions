@@ -8,6 +8,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+- **⚠️ Breaking: the `dataflow` input and output.** jPipe Runner 4.1.0 removed
+  `--dataflow`: it draws one diagram, the dataflow, and `--diagram` draws it. With
+  `runner-version` set to 4.1.0 or later, `dataflow: true` made the runner refuse its
+  command line (exit code 2), and the job failed without a report. The `diagram` output
+  is the one diagram now. A workflow that still sets `dataflow` gets GitHub's "unexpected
+  input" warning, and one that reads `outputs.dataflow` gets nothing (#6, #12).
+
 ## [1.0.0] - 2026-11-11
 
 ### Added

@@ -35,7 +35,6 @@ jobs:
           working-directory: example
           justification: justification.json
           library: steps.py
-          dataflow: "true"
           comment: "false"
 
       - name: Check its outputs
@@ -44,10 +43,9 @@ jobs:
           VERDICT: ${{ steps.run.outputs.verdict }}
           REPORT: ${{ steps.run.outputs.report }}
           DIAGRAM: ${{ steps.run.outputs.diagram }}
-          DATAFLOW: ${{ steps.run.outputs.dataflow }}
         run: |
           [[ "$RESULT" == "0" && "$VERDICT" == "pass" ]] || { echo "::error::result $RESULT, verdict $VERDICT"; exit 1; }
-          for file in "$REPORT" "$DIAGRAM" "$DATAFLOW"; do
+          for file in "$REPORT" "$DIAGRAM"; do
             [[ -s "$file" ]] || { echo "::error::missing output file: '$file'"; exit 1; }
           done
           jq -e '.verdict == "pass" and .summary.pass == 4' "$REPORT"
