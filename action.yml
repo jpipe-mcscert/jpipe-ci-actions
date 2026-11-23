@@ -151,7 +151,7 @@ runs:
         JPIPE_OUTPUT_DIR: ${{ steps.folder.outputs.path }}
       run: JPIPE_OUTPUTS="$GITHUB_OUTPUT" "${{ github.action_path }}/scripts/run.sh"
 
-    - name: Upload the reports and the diagrams
+    - name: Upload the reports and the diagram
       id: upload
       if: ${{ always() && steps.run.outputs.text != '' }}
       uses: actions/upload-artifact@v7
