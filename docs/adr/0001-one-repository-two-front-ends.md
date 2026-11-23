@@ -64,4 +64,6 @@ template inlines its commands.
   deploy key on GitLab allowed to push to `main`, and its private half as a GitHub
   secret. Rotating the key means updating both.
 - Only `main` and the tags reach GitLab, so the GitLab pipeline tests the component after
-  a merge, not on pull requests.
+  a merge, not on pull requests. Since the repository moved to the dev workflow, `main`
+  receives only releases: the component is tested on GitLab once a release is merged,
+  before its tag is pushed (README, *Releasing*).

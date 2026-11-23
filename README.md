@@ -171,9 +171,16 @@ One-time setup of the mirror:
 One version covers the action and the component. Its tag is plain semver, `1.2.3`, with
 no `v`: the GitLab CI/CD Catalog publishes nothing else.
 
-1. Merge a pull request that turns `## [Unreleased]` in `CHANGELOG.md` into
-   `## [1.2.3] - YYYY-MM-DD`, and opens a new, empty `## [Unreleased]` above it.
-2. Tag `main` and push the tag: `git tag 1.2.3 && git push origin 1.2.3`.
+1. Cut `release/1.2.3` from `dev`. On it, turn `## [Unreleased]` in `CHANGELOG.md` into
+   `## [1.2.3] - YYYY-MM-DD`, and open a new, empty `## [Unreleased]` above it.
+2. Open the release pull request from `release/1.2.3` into `main`. It does not go into
+   `dev` first: its diff is the whole release.
+3. Once a maintainer has merged it, wait for *Mirror to GitLab* to carry `main` to
+   GitLab, and for GitLab's pipeline on it to pass: it is the first to test the
+   component since the last release. Then tag the merge commit on `main` and push the
+   tag: `git fetch origin && git tag 1.2.3 origin/main && git push origin 1.2.3`.
+4. Merge `main` back into `dev`, so that `dev` has the release commit and the next
+   release merges cleanly.
 
 The tag is the release. On GitHub the action is usable at it at once
 (`uses: jpipe-mcscert/jpipe-ci-actions@1.2.3`), and `release.yml` adds a release page
@@ -182,6 +189,13 @@ GitLab, whose pipeline publishes the component to the CI/CD Catalog.
 
 The action is not listed on the GitHub Marketplace. To list a version, edit its release
 on GitHub and tick **Publish this Action to the GitHub Marketplace**.
+
+## Contributing
+
+Work follows the jPipe
+[contributing guide](https://github.com/jpipe-mcscert/.github/blob/main/CONTRIBUTING.md):
+`dev` is the default branch, work branches are cut from it and come back through a pull
+request, and `main` holds released code, which reaches it from a release branch.
 
 ## License
 
