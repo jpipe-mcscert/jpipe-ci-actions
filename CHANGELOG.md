@@ -8,6 +8,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **`runner-version` installs post and dev releases from PyPI**, such as `4.4.0.post1`
+  or `4.5.0.dev1`. It took them for git refs of jpipe-runner's repository, which do not
+  exist, and the installation failed.
+
 ### Removed
 - **⚠️ Breaking: the `dataflow` input and output.** jPipe Runner 4.1.0 removed
   `--dataflow`: it draws one diagram, the dataflow, and `--diagram` draws it. With
