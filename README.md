@@ -129,7 +129,7 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 | `scripts/` | Behaviour shared by both, free of platform-specific variables |
 | `github/` | Behaviour of the GitHub Action alone: committing the diagram, finding its URL |
 | `example/` | A justification and its step library, which CI runs the action on |
-| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example, and checks that hostile inputs run nothing |
+| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example with the default and the latest jPipe Runner (and, without failing, the runner's `dev` branch), and checks that hostile inputs run nothing; weekly as well |
 | `.github/workflows/mirror.yml` | Pushes `main` and the tags to the GitLab mirror |
 | `.github/workflows/release.yml` | Adds the GitHub release page when a version tag is pushed |
 | `.gitlab-ci.yml` | Runs on the GitLab mirror: tests the component, publishes Catalog releases |

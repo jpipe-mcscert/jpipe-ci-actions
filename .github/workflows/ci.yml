@@ -4,11 +4,32 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+  # Weekly, so that a new jpipe-runner release is tried even when nothing is pushed here.
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
 
 jobs:
+  # The jpipe-runner releases the action is run with: the default `runner-version`, as
+  # action.yml declares it, and the latest release on PyPI, once if they are the same.
+  runners:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.resolve.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve the default and the latest jpipe-runner
+        id: resolve
+        run: |
+          default="$(yq '.inputs["runner-version"].default' action.yml)"
+          latest="$(curl -fsSL https://pypi.org/pypi/jpipe-runner/json | jq -r .info.version)"
+          echo "default runner-version: $default; latest release on PyPI: $latest"
+          versions="$(jq -cn --arg default "$default" --arg latest "$latest" '[$default, $latest] | unique')"
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -21,10 +42,21 @@ jobs:
         run: shellcheck scripts/*.sh github/*.sh
 
   # Runs the action from this checkout on the example, with the real runner: catches a
-  # broken wiring in action.yml, and a runner release (the default `runner-version`)
-  # that the action does not follow.
+  # broken wiring in action.yml, and a runner release that the action does not follow.
+  # Each runner from `runners`, and the runner's dev branch, which may break without
+  # failing the workflow: it shows a break before it is released.
   self-test:
+    name: self-test (runner ${{ matrix.runner-version }})
+    needs: runners
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.unreleased == true }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner-version: ${{ fromJSON(needs.runners.outputs.versions) }}
+        include:
+          - runner-version: dev
+            unreleased: true
     steps:
       - uses: actions/checkout@v7
 
@@ -35,6 +67,9 @@ jobs:
           working-directory: example
           justification: justification.json
           library: steps.py
+          runner-version: ${{ matrix.runner-version }}
+          # One artifact per matrix job: they share the job's name.
+          artifact-name: jpipe-runner-self-test-${{ matrix.runner-version }}
           comment: "false"
 
       - name: Check its outputs
@@ -53,7 +88,13 @@ jobs:
   # Two runs in one job, as artifact-name allows: the second stops before writing anything,
   # and must not report the first run's report or diagram as its own.
   two-runs:
+    name: two-runs (runner ${{ matrix.runner-version }})
+    needs: runners
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner-version: ${{ fromJSON(needs.runners.outputs.versions) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -64,7 +105,8 @@ jobs:
           working-directory: example
           justification: justification.json
           library: steps.py
-          artifact-name: jpipe-runner-first
+          runner-version: ${{ matrix.runner-version }}
+          artifact-name: jpipe-runner-first-${{ matrix.runner-version }}
           comment: "false"
 
       - name: Second run, on a justification that does not exist
@@ -75,7 +117,8 @@ jobs:
           working-directory: example
           justification: missing.json
           library: steps.py
-          artifact-name: jpipe-runner-second
+          runner-version: ${{ matrix.runner-version }}
+          artifact-name: jpipe-runner-second-${{ matrix.runner-version }}
           comment: "false"
 
       - name: Check that each run reports its own files
