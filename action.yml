@@ -44,7 +44,7 @@ inputs:
     required: false
     default: "4.0.0"
   artifact-name:
-    description: "Name of the artifact holding the reports and the diagram; by default jpipe-runner-<job>. Set it to run the action twice in one job"
+    description: "Name of the artifact holding the reports and the diagram; by default jpipe-runner-<job>, and jpipe-runner-<job>-<index> in a matrix. Set it to run the action twice in one job"
     required: false
     default: ""
   comment:
@@ -156,7 +156,9 @@ runs:
       if: ${{ always() && steps.run.outputs.text != '' }}
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.artifact-name || format('jpipe-runner-{0}', github.job) }}
+        # Jobs of one matrix share github.job, and an artifact name is unique in a run:
+        # in a matrix, the default name ends with the job's index in it.
+        name: ${{ inputs.artifact-name || (strategy.job-total > 1 && format('jpipe-runner-{0}-{1}', github.job, strategy.job-index)) || format('jpipe-runner-{0}', github.job) }}
         path: ${{ steps.folder.outputs.path }}
 
     - name: Commit the diagram

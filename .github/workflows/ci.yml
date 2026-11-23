@@ -77,8 +77,7 @@ jobs:
           justification: justification.json
           library: steps.py
           runner-version: ${{ matrix.version }}
-          # One artifact per matrix job: they share the job's name (#22).
-          artifact-name: jpipe-runner-self-test-${{ matrix.runner }}
+          # No artifact-name: in this matrix, each job's default name must differ (#22).
           comment: "false"
 
       - name: Check its outputs
