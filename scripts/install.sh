@@ -14,8 +14,9 @@ python="${JPIPE_PYTHON:-python3}"
 version="${JPIPE_RUNNER_VERSION:-4.0.0}"
 repository="https://github.com/jpipe-mcscert/jpipe-runner.git"
 
-# A PEP 440 release (4.0.0, 4.1.0rc1) comes from PyPI; anything else is a git ref.
-if [[ "$version" =~ ^[0-9]+(\.[0-9]+)*((a|b|rc)[0-9]+)?$ ]]; then
+# A PEP 440 release (4.0.0, 4.1.0rc1, 4.4.0.post1, 4.5.0.dev1) comes from PyPI; anything
+# else is a git ref.
+if [[ "$version" =~ ^[0-9]+(\.[0-9]+)*((a|b|rc)[0-9]+)?(\.post[0-9]+)?(\.dev[0-9]+)?$ ]]; then
   requirement="jpipe-runner==${version}"
 else
   requirement="jpipe-runner @ git+${repository}@${version}"
