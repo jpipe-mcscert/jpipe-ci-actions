@@ -37,7 +37,7 @@ jobs:
 The job fails when the justification does not hold, with jPipe Runner's exit code. On a
 pull request, the action comments with the verdict, the elements that did not pass and
 why, every diagnostic with its fix, and the text report. The same comment is the job's
-summary, and the JSON report, the text report, the log and the diagrams are uploaded as
+summary, and the JSON report, the text report, the log and the diagram are uploaded as
 an artifact.
 
 The step libraries run on the action's Python: by default the action sets up Python
@@ -79,7 +79,6 @@ include:
 | `strict` | `false` | Count validation warnings as errors, and fail a skipped justification. |
 | `dry-run` | `false` | Validate the step libraries against the justification, and call no step. |
 | `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. |
-| `dataflow` | `false` | Also draw the dataflow diagram: the files and variables the steps declare. |
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11. |
 | `runner-version` | `4.0.0` | jPipe Runner to install: a release on PyPI (`4.0.0`), or a git ref of its repository. |
 | `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. |
@@ -99,7 +98,7 @@ include:
 | `result` | jPipe Runner's exit code: 0 holds, 1 fails, 2 usage error, 3 nothing could run, 4 a file could not be read or written. |
 | `verdict` | `pass`, `fail`, `skip`, `valid` (a dry run) or `invalid`; empty when there is no report. |
 | `report` | Path to the JSON report, if one was written. |
-| `diagram`, `dataflow` | Paths to the diagrams, if they were drawn. |
+| `diagram` | Path to the diagram, if one was drawn. |
 | `comment-id` | ID of the pull request comment, if one was posted. |
 
 **Embedding the diagram.** GitHub shows a comment's images through a proxy that fetches
@@ -119,7 +118,7 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 `python-executable`, `dry_run` is `dry-run`, `embed_image` and the `image_*` inputs are
 `embed-image` and `image-*`, and `version` is `runner-version`. `variable` and
 `config-file` are gone with the runner's options, and `diagram` and `format` gave way to
-`diagram-format` and `dataflow`.
+`diagram-format`.
 
 ## Repository layout
 

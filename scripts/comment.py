@@ -134,7 +134,7 @@ def _diagram(result: int, image_url: str, artifact_url: str) -> str:
     link = f"[Download the diagram]({artifact_url})" if artifact_url else ""
     if not image_url:
         return link
-    image = f"![The justification, with the run over it]({image_url})"
+    image = f"![The justification's diagram, with the run over it]({image_url})"
     body = "\n\n".join(part for part in (image, link) if part)
     if result == 0:
         return f"<details><summary>Diagram</summary>\n\n{body}\n\n</details>"

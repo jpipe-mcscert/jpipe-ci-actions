@@ -35,10 +35,6 @@ inputs:
     description: "Format of the diagram drawn of the run: svg, png, pdf, dot, jpg, jpeg or gif; empty for none"
     required: false
     default: "svg"
-  dataflow:
-    description: "If true, also draw the dataflow diagram: the files and variables the steps declare"
-    required: false
-    default: "false"
   python-executable:
     description: "Python interpreter to run jPipe Runner with, which sees the packages the step libraries import; by default the action sets up Python 3.11"
     required: false
@@ -48,7 +44,7 @@ inputs:
     required: false
     default: "4.0.0"
   artifact-name:
-    description: "Name of the artifact holding the reports and the diagrams; by default jpipe-runner-<job>. Set it to run the action twice in one job"
+    description: "Name of the artifact holding the reports and the diagram; by default jpipe-runner-<job>. Set it to run the action twice in one job"
     required: false
     default: ""
   comment:
@@ -97,9 +93,6 @@ outputs:
   diagram:
     description: "Path to the diagram, if one was drawn"
     value: ${{ steps.run.outputs.diagram }}
-  dataflow:
-    description: "Path to the dataflow diagram, if one was drawn"
-    value: ${{ steps.run.outputs.dataflow }}
   comment-id:
     description: "ID of the pull request comment posted, if one was"
     value: ${{ steps.post.outputs.comment-id }}
@@ -153,13 +146,12 @@ runs:
         JPIPE_STRICT: ${{ inputs.strict }}
         JPIPE_DRY_RUN: ${{ inputs.dry-run }}
         JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
-        JPIPE_DATAFLOW: ${{ inputs.dataflow }}
         # The pull request's head, for a pull request; the commit that ran, otherwise.
         JPIPE_SUFFIX: ${{ github.event.pull_request.head.sha || github.sha }}
         JPIPE_OUTPUT_DIR: ${{ steps.folder.outputs.path }}
       run: JPIPE_OUTPUTS="$GITHUB_OUTPUT" "${{ github.action_path }}/scripts/run.sh"
 
-    - name: Upload the reports and the diagrams
+    - name: Upload the reports and the diagram
       id: upload
       if: ${{ always() && steps.run.outputs.text != '' }}
       uses: actions/upload-artifact@v7
