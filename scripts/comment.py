@@ -1,22 +1,26 @@
 """Write the Markdown that reports a run, from the JSON report jpipe-runner wrote.
 
     python comment.py --result 1 --report report.json --text report.txt --log log.txt \
-        [--image-url URL] [--artifact-url URL] > comment.md
+        [--image-url URL] [--artifact-url URL] [--commit SHA] [--run-url URL] > comment.md
 
 The comment says what the run concluded (the verdict), how many elements ended how, the
 elements that did not pass and why, and every diagnostic with its fix; then the diagram,
-and the text report and the log, folded. It reads the JSON report, the runner's contract
+the text report and the log, folded, and the commit and the run it reports. A comment that
+later runs edit must say which run it shows. It reads the JSON report, the runner's contract
 for programs, rather than its text output, whose layout may change. When there is no
-report (a usage error, or a file that could not be read), it shows the runner's log.
+report (a usage error, or a file that could not be read), it shows the runner's log; when
+the report has a schema this action does not read (report.py), it says so, and shows the
+text report and the log.
 
 Platform-neutral, standard library only (docs/adr/0001).
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any
+
+import report as reports
 
 # GitHub refuses a comment longer than 65,536 characters, and the pull request then gets
 # no report. Every part that grows with the model or the run has its own share, so that
@@ -43,19 +47,28 @@ def render(
     log: str,
     image_url: str = "",
     artifact_url: str = "",
+    unreadable: str = "",
+    commit: str = "",
+    run_url: str = "",
 ) -> str:
-    """The comment for a run that exited with ``result`` and wrote ``report``, if any."""
-    parts = [_headline(result, report)]
+    """The comment for a run that exited with ``result`` and wrote ``report``, if any.
+
+    ``unreadable`` says why a report that was written could not be read.
+    """
+    parts = [_headline(result, report, unreadable)]
     if report is not None:
         parts.append(_summary(report))
         parts.extend(section for section in (_stopped(report), _diagnostics(report)) if section)
     parts.append(_diagram(result, image_url, artifact_url))
     parts.append(_folded("Text report", text))
     parts.append(_folded("Log", log))
+    parts.append(_origin(commit, run_url))
     return "\n\n".join(part for part in parts if part) + "\n"
 
 
-def _headline(result: int, report: dict[str, Any] | None) -> str:
+def _headline(result: int, report: dict[str, Any] | None, unreadable: str) -> str:
+    if unreadable:
+        return f"### jpipe-runner exited with code {result}\n\nIt ran, but {unreadable}."
     if report is None:
         return f"### ✘ jpipe-runner stopped before it could report (exit code {result})"
     # A refused model has no name: it could not be read.
@@ -141,6 +154,13 @@ def _diagram(result: int, image_url: str, artifact_url: str) -> str:
     return body
 
 
+def _origin(commit: str, run_url: str) -> str:
+    """The commit and the run the comment reports."""
+    parts = [f"commit `{commit[:12]}`" if commit else "", f"[this run]({run_url})" if run_url else ""]
+    parts = [part for part in parts if part]
+    return f"<sub>Reported on {' by '.join(parts)}.</sub>" if parts else ""
+
+
 def _folded(title: str, content: str) -> str:
     content = content.strip("\n")
     if not content:
@@ -168,9 +188,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--log", default="", help="what jpipe-runner logged on stderr")
     parser.add_argument("--image-url", default="", help="a URL the diagram can be shown from")
     parser.add_argument("--artifact-url", default="", help="a URL the diagram can be downloaded from")
+    parser.add_argument("--commit", default="", help="the commit the run checked")
+    parser.add_argument("--run-url", default="", help="a URL of the CI run")
     options = parser.parse_args(argv)
-    report_text = _read(options.report)
-    report = json.loads(report_text) if report_text else None
+    try:
+        report, unreadable = reports.load(options.report), ""
+    except reports.Unreadable as error:
+        report, unreadable = None, str(error)
     sys.stdout.write(
         render(
             result=options.result,
@@ -179,6 +203,9 @@ def main(argv: list[str] | None = None) -> int:
             log=_read(options.log),
             image_url=options.image_url,
             artifact_url=options.artifact_url,
+            commit=options.commit,
+            run_url=options.run_url,
+            unreadable=unreadable,
         )
     )
     return 0

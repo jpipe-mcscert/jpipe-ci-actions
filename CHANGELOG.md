@@ -8,7 +8,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **The pull request keeps one comment per workflow and artifact name.** Each run added
+  a new comment, and a pull request pushed ten times collected ten reports. A run now
+  edits the comment the action wrote before, found by a hidden marker on its first line,
+  and `comment-id` is that comment's id; GitHub keeps the earlier reports in the
+  comment's edit history. The comment, and the job summary, end with the commit and the
+  run they report, and a run whose commit is no longer the pull request's head leaves
+  the comment alone. Comments written by earlier releases have no marker: the first run
+  after upgrading adds one more comment, which later runs edit (#10).
+
 ### Fixed
+- **A report the action cannot read no longer costs the comment.** The action reads the
+  JSON report of schema versions 1.x and 2.x, those of jPipe Runner 4.0 to 4.5. A report
+  of another version, from a future runner, or one that is not JSON, crashed the comment
+  step: the pull request got no comment, and the job no summary. The comment now gives
+  the exit code, says that the action cannot read the report, and shows the text report
+  and the log; the job gets a warning, and `verdict` is empty (#8).
 - **The action runs in a matrix without `artifact-name`.** Every job of a matrix took
   the default artifact name, `jpipe-runner-<job>`, and an artifact name must be unique
   in a run, so every job after the first failed to upload its reports. In a matrix, the

@@ -145,6 +145,51 @@ jobs:
           [[ -z "$SECOND_VERDICT$SECOND_REPORT$SECOND_DIAGRAM" ]] || { echo "::error::the second run reports files it did not write: verdict '$SECOND_VERDICT', report '$SECOND_REPORT', diagram '$SECOND_DIAGRAM'"; exit 1; }
           jq -e '.verdict == "pass"' "$FIRST_REPORT"
 
+  # On a pull request, the action comments, and each later run edits that comment: however
+  # often the pull request is pushed, it keeps one comment of this job's. Not on a pull
+  # request from a fork, whose token cannot comment.
+  comment:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Two runs at once could each post a comment; the next run would delete one, but this
+    # run's check would count two.
+    concurrency:
+      group: comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the action on the example
+        id: run
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+
+      - name: Check that the pull request has one comment of this job's
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_ID: ${{ steps.run.outputs.comment-id }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          [[ -n "$COMMENT_ID" ]] || { echo "::error::the action did not comment"; exit 1; }
+          # The comment's first line is the marker that tells this job's comments apart; a
+          # comment edited on the web has CRLF line ends. Only the action's own count: it
+          # leaves alone a comment someone else wrote with the marker.
+          comment="$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID")"
+          marker="$(jq -r '.body | split("\n")[0] | rtrimstr("\r")' <<< "$comment")"
+          author="$(jq -r '.user.id' <<< "$comment")"
+          count="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PULL_REQUEST/comments" \
+            | jq -s --arg marker "$marker" --argjson author "$author" \
+                '[.[][] | select(.user.id == $author and (.body | startswith($marker)))] | length')"
+          [[ "$count" == 1 ]] || { echo "::error::$count comments start with $marker, expected 1"; exit 1; }
+          echo "one comment of this job's on the pull request: $COMMENT_ID"
+
   # Inputs reach the runner as literal arguments, never as shell source: the command
   # injection fixed in jpipe-runner 3.5.0 must not come back. The run fails (the files do
   # not exist); what matters is that none of the payloads ran.

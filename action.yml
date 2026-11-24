@@ -48,7 +48,7 @@ inputs:
     required: false
     default: ""
   comment:
-    description: "If true, post the result as a comment on the pull request (GitHub only)"
+    description: "If true, post the result as a comment on the pull request, and edit that comment on later runs (GitHub only)"
     required: false
     default: "true"
   embed-image:
@@ -85,7 +85,7 @@ outputs:
     description: "jPipe Runner's exit code: 0 holds, 1 fails, 2 usage error, 3 nothing could run, 4 a file could not be read or written"
     value: ${{ steps.run.outputs.result }}
   verdict:
-    description: "The verdict of the run: pass, fail, skip, valid (a dry run) or invalid; empty if there is no report"
+    description: "The verdict of the run: pass, fail, skip, valid (a dry run) or invalid; empty if there is no report, or one whose schema this action does not read"
     value: ${{ steps.run.outputs.verdict }}
   report:
     description: "Path to the JSON report, if one was written"
@@ -94,7 +94,7 @@ outputs:
     description: "Path to the diagram, if one was drawn"
     value: ${{ steps.run.outputs.diagram }}
   comment-id:
-    description: "ID of the pull request comment posted, if one was"
+    description: "ID of the pull request comment posted or edited, if one was"
     value: ${{ steps.post.outputs.comment-id }}
 
 runs:
@@ -128,11 +128,19 @@ runs:
       run: ${{ github.action_path }}/scripts/install.sh
 
     # A folder of its own: a second run in the same job (see artifact-name) must neither
-    # report nor upload the files of the first.
+    # report nor upload the files of the first. The artifact's name also tells this run's
+    # comment from another's.
     - name: Make a folder for the run
       id: folder
       shell: bash
-      run: echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")" >> "$GITHUB_OUTPUT"
+      env:
+        # Jobs of one matrix share github.job, and an artifact name is unique in a run:
+        # in a matrix, the default name ends with the job's index in it.
+        ARTIFACT_NAME: ${{ inputs.artifact-name || (strategy.job-total > 1 && format('jpipe-runner-{0}-{1}', github.job, strategy.job-index)) || format('jpipe-runner-{0}', github.job) }}
+      run: |
+        # One line in $GITHUB_OUTPUT: a line break would let the name set other outputs.
+        [[ "$ARTIFACT_NAME" != *$'\n'* ]] || { echo "::error::artifact-name must be one line"; exit 1; }
+        { echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")"; echo "artifact-name=$ARTIFACT_NAME"; } >> "$GITHUB_OUTPUT"
 
     - name: Run jPipe Runner
       id: run
@@ -156,9 +164,7 @@ runs:
       if: ${{ always() && steps.run.outputs.text != '' }}
       uses: actions/upload-artifact@v7
       with:
-        # Jobs of one matrix share github.job, and an artifact name is unique in a run:
-        # in a matrix, the default name ends with the job's index in it.
-        name: ${{ inputs.artifact-name || (strategy.job-total > 1 && format('jpipe-runner-{0}-{1}', github.job, strategy.job-index)) || format('jpipe-runner-{0}', github.job) }}
+        name: ${{ steps.folder.outputs.artifact-name }}
         path: ${{ steps.folder.outputs.path }}
 
     - name: Commit the diagram
@@ -188,17 +194,25 @@ runs:
       env:
         JPIPE_PYTHON: ${{ inputs.python-executable || steps.python.outputs.python-path }}
         RESULT: ${{ steps.run.outputs.result }}
+        VERDICT: ${{ steps.run.outputs.verdict }}
         REPORT: ${{ steps.run.outputs.report }}
         TEXT: ${{ steps.run.outputs.text }}
         LOG: ${{ steps.run.outputs.log }}
         IMAGE_URL: ${{ steps.image.outputs.url }}
         ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
         # Next to the run's folder, not in it: the comment is not part of the artifact.
         COMMENT: ${{ steps.folder.outputs.path }}-comment.md
       run: |
         "$JPIPE_PYTHON" "${{ github.action_path }}/scripts/comment.py" \
           --result "$RESULT" --report "$REPORT" --text "$TEXT" --log "$LOG" \
-          --image-url "$IMAGE_URL" --artifact-url "$ARTIFACT_URL" > "$COMMENT"
+          --image-url "$IMAGE_URL" --artifact-url "$ARTIFACT_URL" \
+          --commit "$COMMIT" --run-url "$RUN_URL" > "$COMMENT"
+        # A report without a verdict could not be read: run.sh's log says why.
+        if [[ -n "$REPORT" && -z "$VERDICT" ]]; then
+          echo "::warning::jpipe-runner wrote a report that the action could not read: see the log of the step that ran it"
+        fi
         cat "$COMMENT" >> "$GITHUB_STEP_SUMMARY"
         echo "path=$COMMENT" >> "$GITHUB_OUTPUT"
 
@@ -208,17 +222,53 @@ runs:
       uses: actions/github-script@v9
       env:
         COMMENT: ${{ steps.comment.outputs.path }}
+        ARTIFACT_NAME: ${{ steps.folder.outputs.artifact-name }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
-          const body = require("fs").readFileSync(process.env.COMMENT, "utf8");
+          // One comment per workflow and artifact name, edited by each later run: the
+          // marker that starts it finds it. The workflow is its file, which two workflows
+          // cannot share, as they can share a job's name. Encoded, so that no value ends
+          // the HTML comment, and no marker starts another.
+          const workflow = process.env.GITHUB_WORKFLOW_REF.replace(/@[^@]*$/, "");
+          const marker = `<!-- jpipe-ci-actions ${encodeURIComponent(workflow)} ${encodeURIComponent(process.env.ARTIFACT_NAME)} -->`;
+          const body = `${marker}\n${require("fs").readFileSync(process.env.COMMENT, "utf8")}`;
+          const issue = { ...context.repo, issue_number: context.issue.number };
           try {
-            const { data } = await github.rest.issues.createComment({
-              ...context.repo,
-              issue_number: context.issue.number,
-              body,
-            });
+            // Runs of successive pushes can end out of order: a run whose commit is no
+            // longer the pull request's head leaves the comment to the run of the head.
+            const { data: pull } = await github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number });
+            if (pull.head.sha !== context.payload.pull_request.head.sha) {
+              core.info(`Not commenting: the pull request's head is now ${pull.head.sha}, whose run reports it`);
+              return;
+            }
+            // Only a comment of the token's own identity is edited, never one that
+            // someone else wrote with the marker; by id, as a bot's login and its
+            // owner's may differ by [bot] alone. A token that cannot say who it is
+            // posts a new comment, as it did before.
+            const self = await github.graphql("query { viewer { databaseId } }").then(
+              ({ viewer }) => viewer.databaseId,
+              (error) => core.warning(`Posting a new comment: the token's identity is unknown (${error.message})`),
+            );
+            const comments = self
+              ? await github.paginate(github.rest.issues.listComments, { ...issue, per_page: 100 })
+              : [];
+            const [earlier, ...extra] = comments.filter(
+              (comment) => comment.user?.id === self && comment.body?.startsWith(marker),
+            );
+            const { data } = earlier
+              ? await github.rest.issues.updateComment({ ...context.repo, comment_id: earlier.id, body })
+              : await github.rest.issues.createComment({ ...issue, body });
+            core.info(`${earlier ? "Edited" : "Posted"} ${data.html_url}`);
             core.setOutput("comment-id", String(data.id));
+            // Two runs at once can each find no comment, and each post one: the oldest
+            // is kept, and the others go, so the pull request is back to one.
+            for (const comment of extra) {
+              await github.rest.issues.deleteComment({ ...context.repo, comment_id: comment.id }).then(
+                () => core.info(`Deleted ${comment.html_url}, a second comment of this workflow and artifact name`),
+                (error) => core.warning(`Could not delete ${comment.html_url}: ${error.message}`),
+              );
+            }
           } catch (error) {
             // A token without pull-requests: write, or a pull request from a fork: the
             // run is reported in the job summary anyway.
