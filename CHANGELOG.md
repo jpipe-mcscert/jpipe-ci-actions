@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`incremental` runs a pull request again only where it changed** (jPipe Runner's
+  `--incremental`, 4.5.0 or later). A push runs in full, and saves its report in the
+  GitHub Actions cache; a pull request starts from its base branch's last report (or the
+  default branch's, until the base branch has one), runs
+  again what changed since, and reuses the rest, with the whole argument's verdict. The
+  comment says what ran again, and why. `baseline` names a report to start from instead,
+  on any event. With an older runner, an incremental run (a pull request's, or any run
+  with `baseline`) stops with a usage error, exit code 2. An incremental run is only as sound as the step libraries' declarations (#16).
 - **`jobs` runs independent steps together**: up to that many at a time, or one per CPU
   with `auto`, when the argument does not order them (jPipe Runner's `--jobs`, 4.4.0 or
   later). Empty by default: one step at a time. The step libraries must be written for it

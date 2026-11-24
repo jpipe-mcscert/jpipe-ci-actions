@@ -85,6 +85,8 @@ include:
 | `strict` | `false` | Count validation warnings as errors, and fail a skipped justification. |
 | `dry-run` | `false` | Validate the step libraries against the justification, and call no step. |
 | `jobs` | | How many steps to run at a time when the argument does not order them: a number, or `auto` for one per CPU; empty for one at a time. The step libraries must be written for it ([steps that run together](https://github.com/jpipe-mcscert/jpipe-runner/blob/main/docs/authoring.md#steps-that-run-together)): a step that writes a file another evidence observes can fail with `JP019`, now and then. Needs jPipe Runner 4.4.0 or later. |
+| `incremental` | `false` | On a pull request, run again only what changed since the base branch's last report, and reuse the rest from it; on a push, run in full and save the report for the pull requests. See [Incremental runs](#incremental-runs). Needs jPipe Runner 4.5.0 or later. |
+| `baseline` | | With `incremental`, the JSON report to run from, on any event, relative to `working-directory`, instead of the one a push saved. One that does not exist runs everything. |
 | `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. For a format other than `svg`, the action installs DejaVu Sans if it is missing, for the status symbols (with `apt-get`; elsewhere it warns). |
 | `verbosity` | | What jPipe Runner logs: `quiet` (errors only), `normal` (warnings and errors), `verbose` (what the run does, such as the Python that runs the steps) or `debug` (details, such as the libraries a glob matched and `sys.path`). Empty is `normal`, or `debug` on a re-run with debug logging turned on. |
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11. |
@@ -114,6 +116,33 @@ them anonymously, and an artifact needs a login: so `embed-image` commits the di
 a branch, and shows it from there. For a private repository, the URL holds a token that
 expires: the image may stop showing after a while, and the comment always links to the
 artifact as well.
+
+### Incremental runs
+
+With `incremental: true`, jPipe Runner runs again only what changed since a baseline, an
+earlier run's JSON report, and takes every other element from it, with the whole
+argument's verdict ([how the runner chooses](https://github.com/jpipe-mcscert/jpipe-runner/blob/main/docs/cli.md#incremental-runs)).
+The comment says what ran again, and why.
+
+The action keeps the baseline in the GitHub Actions cache, one per workflow file and
+artifact name:
+
+- **On a push**, the run is a full one, so that the branch is always checked whole, and
+  its report is saved as the baseline of the pull requests into that branch, unless it is
+  a dry run, which calls no step.
+- **On a pull request**, the run starts from the last baseline of the base branch, or, if
+  it has none yet, of the repository's default branch, and saves nothing: a pull request
+  cannot write those branches' caches, so a fork cannot plant a baseline. With neither,
+  the run is a full one.
+- **On another event**, such as a schedule, the run is a full one, and saves nothing.
+
+To keep the baseline elsewhere, such as an artifact downloaded from another run, give its
+path as `baseline`: the run starts from it on any event, and the action neither restores
+nor saves one.
+
+**An incremental run is only as sound as the step libraries' declarations.** A file a step
+reads without declaring it is never seen to change, and the element is reused; the full
+run of the push that merges the pull request checks it again.
 
 ### Upgrading from 1.x
 
@@ -163,7 +192,7 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 | `scripts/` | Behaviour shared by both, free of platform-specific variables |
 | `github/` | Behaviour of the GitHub Action alone: committing the diagram, finding its URL |
 | `example/` | A justification and its step library, which CI runs the action on |
-| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example with the default and the latest jPipe Runner (and, without failing, the runner's `dev` branch), runs the inputs the example leaves unset (`jobs`, `verbosity`, a PNG diagram) on the slim image too, checks that hostile inputs run nothing, and that a pull request keeps one comment; weekly as well |
+| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example with the default and the latest jPipe Runner (and, without failing, the runner's `dev` branch), runs the inputs the example leaves unset (`jobs`, `verbosity`, a PNG diagram) on the slim image too, and incremental runs, checks that hostile inputs run nothing, and that a pull request keeps one comment; weekly as well |
 | `.github/workflows/mirror.yml` | Pushes `main` and the tags to the GitLab mirror |
 | `.github/workflows/release.yml` | Adds the GitHub release page when a version tag is pushed |
 | `.gitlab-ci.yml` | Runs on the GitLab mirror: tests the component, publishes Catalog releases |

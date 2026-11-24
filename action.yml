@@ -35,6 +35,14 @@ inputs:
     description: "How many steps to run at a time, when the argument does not order them: a number, or auto for one per CPU; empty for one at a time. The step libraries must be written for it"
     required: false
     default: ""
+  incremental:
+    description: "If true, a pull request runs again only what changed since its base branch's last report, and reuses the rest from it; a push runs in full, and saves its report for the pull requests. Needs jPipe Runner 4.5.0 or later"
+    required: false
+    default: "false"
+  baseline:
+    description: "With incremental, the JSON report to run from, on any event, relative to working-directory, instead of the one a push saved; one that does not exist runs everything"
+    required: false
+    default: ""
   diagram-format:
     description: "Format of the diagram drawn of the run: svg, png, pdf, dot, jpg, jpeg or gif; empty for none"
     required: false
@@ -163,7 +171,32 @@ runs:
       run: |
         # One line in $GITHUB_OUTPUT: a line break would let the name set other outputs.
         [[ "$ARTIFACT_NAME" != *$'\n'* ]] || { echo "::error::artifact-name must be one line"; exit 1; }
-        { echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")"; echo "artifact-name=$ARTIFACT_NAME"; } >> "$GITHUB_OUTPUT"
+        # An incremental run's baseline is cached per workflow file and artifact name, as
+        # the comment is, under a key that ends with the commit, and at a path that is the
+        # same in every run: the cache restores to the path it saved.
+        # The ref follows the first "@refs/": a branch's name may hold an @ of its own.
+        workflow="${GITHUB_WORKFLOW_REF%%@refs/*}"
+        cache_key="jpipe-runner-baseline-${workflow#*/*/}-$ARTIFACT_NAME-"
+        # The cache reads its path as a glob: the file is named by a checksum of the
+        # artifact's name, which may hold [, * or ?.
+        read -r checksum _ < <(printf '%s' "$ARTIFACT_NAME" | cksum)
+        {
+          echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")"
+          echo "artifact-name=$ARTIFACT_NAME"
+          echo "baseline=$RUNNER_TEMP/jpipe-runner-baseline/$checksum.json"
+          echo "cache-key=${cache_key//,/_}"
+        } >> "$GITHUB_OUTPUT"
+
+    # A pull request runs from the newest baseline of its base branch. It cannot write that
+    # branch's cache, so a fork cannot plant one.
+    - name: Restore the baseline of the incremental run
+      id: baseline
+      if: ${{ inputs.incremental == 'true' && inputs.baseline == '' && github.event.pull_request }}
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.folder.outputs.baseline }}
+        key: ${{ steps.folder.outputs.cache-key }}${{ github.sha }}
+        restore-keys: ${{ steps.folder.outputs.cache-key }}
 
     - name: Run jPipe Runner
       id: run
@@ -181,10 +214,32 @@ runs:
         # chose a verbosity.
         JPIPE_VERBOSITY: ${{ inputs.verbosity || (runner.debug == '1' && 'debug') || 'normal' }}
         JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
+        JPIPE_INCREMENTAL: ${{ inputs.incremental == 'true' && (inputs.baseline || (github.event.pull_request && steps.folder.outputs.baseline)) || '' }}
         # The pull request's head, for a pull request; the commit that ran, otherwise.
         JPIPE_SUFFIX: ${{ github.event.pull_request.head.sha || github.sha }}
         JPIPE_OUTPUT_DIR: ${{ steps.folder.outputs.path }}
       run: JPIPE_OUTPUTS="$GITHUB_OUTPUT" "${{ github.action_path }}/scripts/run.sh"
+
+    # A push runs in full, so that the branch is always checked whole, and saves its report
+    # as the baseline of the pull requests into the branch. A pull request saves none: its
+    # later runs are judged against the base branch, not against themselves.
+    - name: Keep the report as the next baseline
+      id: next-baseline
+      # A dry run calls no step, so its report is no baseline: the runner would run every
+      # element again from it.
+      if: ${{ always() && inputs.incremental == 'true' && inputs.baseline == '' && inputs.dry-run != 'true' && github.event_name == 'push' && steps.run.outputs.report != '' }}
+      shell: bash
+      env:
+        REPORT: ${{ steps.run.outputs.report }}
+        BASELINE: ${{ steps.folder.outputs.baseline }}
+      run: mkdir -p "$(dirname "$BASELINE")" && cp "$REPORT" "$BASELINE"
+
+    - name: Save the next baseline
+      if: ${{ always() && steps.next-baseline.outcome == 'success' }}
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.folder.outputs.baseline }}
+        key: ${{ steps.folder.outputs.cache-key }}${{ github.sha }}
 
     - name: Upload the reports and the diagram
       id: upload
@@ -229,13 +284,25 @@ runs:
         ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
         COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        BASELINE: ${{ inputs.baseline }}
+        BASELINE_KEY: ${{ steps.baseline.outputs.cache-matched-key }}
+        CACHE_KEY: ${{ steps.folder.outputs.cache-key }}
         # Next to the run's folder, not in it: the comment is not part of the artifact.
         COMMENT: ${{ steps.folder.outputs.path }}-comment.md
       run: |
+        # The baseline, for people: the commit whose report was restored, or the file given.
+        if [[ -n "$BASELINE" ]]; then
+          baseline="\`$BASELINE\`"
+        elif [[ -n "$BASELINE_KEY" ]]; then
+          commit="${BASELINE_KEY#"$CACHE_KEY"}"
+          baseline="the report of commit \`${commit:0:12}\`"
+        else
+          baseline=""
+        fi
         "$JPIPE_PYTHON" "${{ github.action_path }}/scripts/comment.py" \
           --result "$RESULT" --report "$REPORT" --text "$TEXT" --log "$LOG" \
           --image-url "$IMAGE_URL" --artifact-url "$ARTIFACT_URL" \
-          --commit "$COMMIT" --run-url "$RUN_URL" > "$COMMENT"
+          --commit "$COMMIT" --run-url "$RUN_URL" --baseline "$baseline" > "$COMMENT"
         # A report without a verdict could not be read: run.sh's log says why.
         if [[ -n "$REPORT" && -z "$VERDICT" ]]; then
           echo "::warning::jpipe-runner wrote a report that the action could not read: see the log of the step that ran it"

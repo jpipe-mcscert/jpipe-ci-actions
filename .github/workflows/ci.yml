@@ -133,6 +133,68 @@ jobs:
           [[ -s "$(dirname "$REPORT")/log.txt" ]] || { echo "::error::verbosity: debug logged nothing"; exit 1; }
           echo "fonts: $(fc-list : family | grep -i "DejaVu Sans" | head -1)"
 
+  # Incremental runs. With the cache, a push to dev runs in full and saves its report, and
+  # a pull request starts from the last one dev saved. With `baseline`, a run starts from
+  # the file given; nothing changed since, so it reuses every element. An older runner
+  # refuses incremental.
+  incremental:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run with the baseline in the cache
+        id: cache
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          incremental: "true"
+          artifact-name: jpipe-runner-incremental-cache
+          comment: "false"
+
+      - name: Run again from the first run's report
+        id: file
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          incremental: "true"
+          baseline: ${{ steps.cache.outputs.report }}
+          artifact-name: jpipe-runner-incremental-file
+          comment: "false"
+
+      - name: Run with a runner older than 4.5.0
+        id: old
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          runner-version: 4.4.0
+          incremental: "true"
+          baseline: ${{ steps.cache.outputs.report }}
+          artifact-name: jpipe-runner-incremental-old
+          comment: "false"
+
+      - name: Check each run
+        env:
+          CACHE_REPORT: ${{ steps.cache.outputs.report }}
+          FILE_REPORT: ${{ steps.file.outputs.report }}
+          OLD_RESULT: ${{ steps.old.outputs.result }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          # A pull request runs incrementally, from dev's baseline or none; a push in full.
+          if [[ -n "$PULL_REQUEST" ]]; then
+            jq -e '.selection != null' "$CACHE_REPORT"
+          else
+            jq -e '.selection == null' "$CACHE_REPORT"
+          fi
+          jq -e '.selection != null and ([.elements[].reused] | all)' "$FILE_REPORT"
+          [[ "$OLD_RESULT" == "2" ]] || { echo "::error::expected runner 4.4.0 to refuse incremental, got result '$OLD_RESULT'"; exit 1; }
+
   # Two runs in one job, as artifact-name allows: the second stops before writing anything,
   # and must not report the first run's report or diagram as its own.
   two-runs:

@@ -11,6 +11,9 @@
 #   JPIPE_JOBS            Steps run at a time: a number, or auto; empty: the runner's default
 #   JPIPE_VERBOSITY       quiet, normal (the default), verbose or debug; another value
 #                         is a usage error, exit code 2
+#   JPIPE_INCREMENTAL     A baseline: the JSON report of an earlier run, to run again only
+#                         what changed since; one that does not exist runs everything.
+#                         Empty: a full run. Needs jpipe-runner 4.5.0 or later
 #   JPIPE_DIAGRAM_FORMAT  Format of the diagram (svg, png, pdf, dot, ...); empty: none
 #   JPIPE_SUFFIX          Appended to the diagram's name, such as a commit SHA
 #   JPIPE_OUTPUT_DIR      Directory the report, the logs and the diagram are written to
@@ -59,6 +62,16 @@ case "${JPIPE_VERBOSITY:-normal}" in
   debug) command+=(-vv) ;;
   *) usage="error: verbosity must be quiet, normal, verbose or debug, not '$JPIPE_VERBOSITY'" ;;
 esac
+if [[ -n "${JPIPE_INCREMENTAL:-}" ]]; then
+  # Asked of the runner rather than read from its version, which a git ref (dev) does not
+  # order. Read whole: grep -q stopping early must not fail the pipe.
+  help="$("$python" -m jpipe_runner --help 2>&1)"
+  if grep -q -- "--incremental" <<< "$help"; then
+    command+=(--incremental "$JPIPE_INCREMENTAL")
+  else
+    usage+="${usage:+$'\n'}error: incremental needs jpipe-runner 4.5.0 or later, not $("$python" -m jpipe_runner --version 2>&1)"
+  fi
+fi
 if [[ -n "$format" ]]; then
   diagram="$output_dir/$name.$format"
   command+=(--diagram "$diagram")
