@@ -8,24 +8,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-24
+
 ### Added
 - **`incremental` runs a pull request again only where it changed** (jPipe Runner's
   `--incremental`, 4.5.0 or later). A push runs in full, and saves its report in the
   GitHub Actions cache; a pull request starts from its base branch's last report (or the
-  default branch's, until the base branch has one), runs
-  again what changed since, and reuses the rest, with the whole argument's verdict. The
-  comment says what ran again, and why. `baseline` names a report to start from instead,
-  on any event. With an older runner, an incremental run (a pull request's, or any run
-  with `baseline`) stops with a usage error, exit code 2. An incremental run is only as sound as the step libraries' declarations (#16).
+  default branch's, until the base branch has one), runs again what changed since, and
+  reuses the rest, with the whole argument's verdict. The comment says what ran again,
+  and why. `baseline` names a report to start from instead, on any event. With an older
+  runner, an incremental run (a pull request's, or any run with `baseline`) stops with a
+  usage error, exit code 2. An incremental run is only as sound as the step libraries'
+  declarations (#16).
 - **`jobs` runs independent steps together**: up to that many at a time, or one per CPU
   with `auto`, when the argument does not order them (jPipe Runner's `--jobs`, 4.4.0 or
   later). Empty by default: one step at a time. The step libraries must be written for it
   (#13).
 - **`verbosity` sets what jPipe Runner logs**: `quiet`, `normal` (the default, when
-  empty), `verbose` or `debug`. The log, in the comment and the artifact, then says which Python ran the
-  steps, the libraries a glob matched and `sys.path`, which a library that cannot be
-  imported (`JP020`) needs. A re-run with debug logging turned on uses `debug`, unless the
-  workflow set a verbosity. Another value is a usage error, exit code 2 (#9).
+  empty), `verbose` or `debug`. The log, in the comment and the artifact, then says which
+  Python ran the steps, the libraries a glob matched and `sys.path`, which a library that
+  cannot be imported (`JP020`) needs. A re-run with debug logging turned on uses `debug`,
+  unless the workflow set a verbosity. Another value is a usage error, exit code 2 (#9).
 
 ### Changed
 - **⚠️ Breaking: the action installs jPipe Runner 4.5.0 by default**, where it installed
@@ -83,6 +86,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the dataflow is no longer drawn. A workflow that still sets `dataflow` gets GitHub's
   "unexpected input" warning, and one that reads `outputs.dataflow` gets nothing (#6,
   #12).
+
+### Not yet
+- The GitLab CI/CD component is still a scaffold: none of the above reaches it yet.
 
 ## [1.0.0] - 2026-11-11
 
