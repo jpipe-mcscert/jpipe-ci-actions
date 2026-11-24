@@ -4,9 +4,10 @@
 
 reads jpipe-runner's JSON report and writes JUNIT: one test case per element of the
 justification, which fails or is skipped with its reason and its diagnostics, and one for
-validation, which errors when nothing could run. Without a report this action reads, it
-writes one test case that errors with the runner's exit code, CODE, so that a widget does
-not show a run that went wrong as an empty one.
+validation, which errors when nothing could run, and lists the diagnostics about no
+element. A run that exited with CODE other than 0, without a report this action reads or
+with no element failed, gets one more test case that errors with the exit code: a widget
+never shows a run that failed the job as one that passed.
 
 GitLab shows the file in the merge request (`artifacts:reports:junit`); on GitHub, a test
 report action can read it. Platform-neutral, standard library only (docs/adr/0001).
@@ -20,8 +21,9 @@ from typing import Any
 
 import report as reports
 
-# Characters XML 1.0 cannot hold, even escaped.
-_UNSAFE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
+# Characters XML 1.0 cannot hold, even escaped: lone surrogates among them, which a
+# step's reason can hold when it read bytes that are not UTF-8.
+_UNSAFE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
 
 
 def _text(value: str) -> str:
@@ -57,7 +59,8 @@ def document(report: dict[str, Any] | None, result: int, unreadable: str = "") -
         return _counted(root, suite)
 
     diagnostics = report["diagnostics"]
-    general = [_diagnostic(d) for d in diagnostics if d["element"] is None]
+    ids = {element["id"] for element in report["elements"]}
+    general = [_diagnostic(d) for d in diagnostics if d["element"] not in ids]
     validation = _case(suite, "validation", name)
     if report["verdict"] == "invalid":
         _outcome(validation, "error", "nothing ran", [_diagnostic(d) for d in diagnostics])
@@ -80,6 +83,14 @@ def document(report: dict[str, Any] | None, result: int, unreadable: str = "") -
             notes = ["reused from the baseline of an incremental run"] if reused else []
             if notes + details:
                 ET.SubElement(case, "system-out").text = _text("\n".join(notes + details))
+    # A run can fail the job with no element failed: a strict run that skipped, or a
+    # report written but not the diagram. The widget must not show it as a success.
+    if result != 0 and not any(
+        case.find(tag) is not None for case in suite for tag in ("failure", "error")
+    ):
+        why = "a strict run fails a skipped justification" if report["strict"] else "see the job log"
+        message = f"jpipe-runner exited with code {result}; {why}"
+        _outcome(_case(suite, "jpipe-runner", name), "error", message, [])
     return _counted(root, suite)
 
 

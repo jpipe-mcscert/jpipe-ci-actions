@@ -131,7 +131,7 @@ The outputs are the action's; the GitLab job has its exit code and its artifacts
 | `verdict` | `pass`, `fail`, `skip`, `valid` (a dry run) or `invalid`; empty when there is no report, or one whose schema this action does not read. |
 | `report` | Path to the JSON report, if one was written. |
 | `diagram` | Path to the diagram, if one was drawn. |
-| `junit` | Path to the JUnit XML report of the run, in the artifact too: one test case per element, which fails or is skipped with its reason and diagnostics, and one for validation. A test report action can show it. |
+| `junit` | Path to the JUnit XML report of the run, if one was written, in the artifact too: one test case per element, which fails or is skipped with its reason and diagnostics, and one for validation. A test report action can show it. |
 | `comment-id` | ID of the pull request comment, if one was posted or edited. |
 
 **Embedding the diagram.** GitHub shows a comment's images through a proxy that fetches

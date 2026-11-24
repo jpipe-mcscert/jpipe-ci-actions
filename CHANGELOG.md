@@ -19,8 +19,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (#17, #18, [ADR-0004](docs/adr/0004-the-gitlab-component-carries-scripts-inline.md)).
 - **A JUnit XML report of the run**, `junit.xml`, beside the JSON report: one test case
   per element, failed or skipped with its reason and its diagnostics, and one for
-  validation, which errors when nothing ran. A run that wrote no report this action reads
-  gets one test case that errors with the exit code. On GitLab, the merge request's test
+  validation, which errors when nothing ran. A run that fails the job with no element
+  failed, or wrote no report this action reads, gets one more test case that errors with
+  the exit code. On GitLab, the merge request's test
   summary shows it; on GitHub, it is in the artifact, and the `junit` output gives its
   path for a test report action (#19).
 

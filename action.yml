@@ -109,7 +109,7 @@ outputs:
     description: "Path to the diagram, if one was drawn"
     value: ${{ steps.run.outputs.diagram }}
   junit:
-    description: "Path to the JUnit XML report of the run, for a test report action: one test case per element, and one for validation"
+    description: "Path to the JUnit XML report of the run, if one was written, for a test report action: one test case per element, and one for validation"
     value: ${{ steps.run.outputs.junit }}
   comment-id:
     description: "ID of the pull request comment posted or edited, if one was"
