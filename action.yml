@@ -5,9 +5,8 @@ branding:
   icon: "user-check"
   color: "red"
 
-# Every input needs its counterpart in templates/jpipe-runner.yml (docs/adr/0001). For
-# now the GitLab component is still a scaffold, and this action is the only front end
-# that runs anything: the inputs below are not mirrored there yet.
+# Every input needs its counterpart in templates/jpipe-runner.yml, with the same name and
+# default (docs/adr/0001), unless it only makes sense here: those say "(GitHub only)".
 inputs:
   justification:
     description: "The justification: the JSON file the jPipe compiler writes (jpipe process -f JSON), relative to working-directory"
@@ -120,29 +119,9 @@ runs:
       if: ${{ inputs.diagram-format != '' && inputs.diagram-format != 'dot' }}
       shell: bash
       env:
-        FORMAT: ${{ inputs.diagram-format }}
-      run: |
-        # Only the dot program is needed. Most GitHub-hosted images have it already.
-        packages=()
-        command -v dot > /dev/null || packages+=(graphviz)
-        # The diagram marks each status with a symbol (✔ ✘ ◌ ⚠). An SVG leaves them to the
-        # browser; any other format draws them with a font installed here, and without
-        # one that has them, they come out as empty boxes. The list is read whole: grep
-        # -q stopping early must not make fc-list fail under pipefail.
-        fonts="$(fc-list : family 2> /dev/null || true)"
-        if [[ "$FORMAT" != "svg" ]] && ! grep -qi "DejaVu Sans" <<< "$fonts"; then
-          if command -v apt-get > /dev/null; then
-            packages+=(fonts-dejavu-core)
-          else
-            echo "::warning::No DejaVu Sans font here, and no apt-get to install it: the status symbols of the $FORMAT diagram may show as empty boxes"
-          fi
-        fi
-        if (( ${#packages[@]} )); then
-          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${packages[@]}" > /dev/null
-          echo "Installed: ${packages[*]}"
-        fi
-        echo "Graphviz: $(dot -V 2>&1)"
+        JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
+        JPIPE_WARNING: "::warning::"
+      run: ${{ github.action_path }}/scripts/graphviz.sh
 
     - name: Set up Python
       id: python

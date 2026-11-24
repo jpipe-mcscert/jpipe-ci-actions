@@ -4,7 +4,8 @@ Date: 2026-11-09
 
 ## Status
 
-Accepted
+Accepted. [ADR-0004](0004-the-gitlab-component-carries-scripts-inline.md) answers its
+open question.
 
 ## Context
 

@@ -6,36 +6,679 @@
 #     - component: gitlab.com/mcscert/jpipe-ci-actions/jpipe-runner@<version>
 #       inputs:
 #         working-directory: path/to/model
+#         justification: justification.json
+#         library: steps.py
 #
-# Scaffold only: it runs nothing yet, and does not mirror the inputs of action.yml, which
-# runs jPipe Runner 4 on GitHub (docs/adr/0002). Once it runs the runner, every input
-# here mirrors an input of action.yml (docs/adr/0001).
+# Every input of action.yml has its counterpart here, with the same name and default
+# (docs/adr/0001), except the GitHub-only ones: comment and the image-* and github-*
+# inputs, which comment on a pull request and commit the diagram. stage, job-name and
+# image are GitLab's own.
+#
+# The job runs in the consumer's project, where this repository is not checked out, so
+# the template carries scripts/ inline (docs/adr/0004): gitlab/inline.py writes the block
+# between the markers below, and CI fails when it differs from scripts/.
 spec:
   inputs:
+    # GitLab only.
     stage:
       description: "Pipeline stage the job runs in"
       default: test
+    job-name:
+      description: "Name of the job; give each include of the component its own"
+      default: jpipe-runner
+    image:
+      description: "Image the job runs in: it needs bash and Python, with the packages the step libraries import"
+      default: python:3.11-slim
+    # As in action.yml.
+    justification:
+      description: "The justification: the JSON file the jPipe compiler writes (jpipe process -f JSON), relative to working-directory"
+    library:
+      description: "The step libraries, one per line: Python files, or globs of files"
+    python-path:
+      description: "Directories the step libraries import modules from, one per line"
+      default: ""
     working-directory:
-      description: "Directory to run jPipe Runner from"
+      description: "Directory to run jPipe Runner from: justification, library and python-path are relative to it. The paths the evidence observes are relative to the step library's file"
       default: "."
+    strict:
+      description: "If true, count validation warnings as errors, and fail a skipped justification"
+      options: ["true", "false"]
+      default: "false"
+    dry-run:
+      description: "If true, validate the step libraries against the justification, and call no step"
+      options: ["true", "false"]
+      default: "false"
+    jobs:
+      description: "How many steps to run at a time, when the argument does not order them: a number, or auto for one per CPU; empty for one at a time. The step libraries must be written for it"
+      default: ""
+    incremental:
+      description: "If true, run again only what changed since baseline, and reuse the rest from it. The component keeps no baseline of its own yet: without baseline, the run is a full one. Needs jPipe Runner 4.5.0 or later"
+      options: ["true", "false"]
+      default: "false"
+    baseline:
+      description: "With incremental, the JSON report to run from, relative to working-directory; one that does not exist runs everything"
+      default: ""
+    diagram-format:
+      description: "Format of the diagram drawn of the run: svg, png, pdf, dot, jpg, jpeg or gif; empty for none"
+      default: "svg"
+    verbosity:
+      description: "What jPipe Runner logs: quiet (errors only), normal, verbose or debug; empty for normal, or for debug when CI_DEBUG_TRACE is true"
+      default: ""
+    python-executable:
+      description: "Python interpreter to run jPipe Runner with, which sees the packages the step libraries import; by default the image's python3"
+      default: ""
+    runner-version:
+      description: "jPipe Runner to install: a release on PyPI (4.5.0), or a git ref of its repository (main, a commit)"
+      default: "4.5.0"
+    # action.yml's default is empty, and computed; GitLab expands the variable in the name.
+    artifact-name:
+      description: "Name of the job's artifacts archive, holding the reports and the diagram"
+      default: "jpipe-runner-$CI_JOB_NAME"
 ---
-jpipe-runner:
+"$[[ inputs.job-name ]]":
   stage: $[[ inputs.stage ]]
-  image: python:3.11-slim
+  image: $[[ inputs.image ]]
   # Inputs reach the shell through variables, never interpolated into `script`: an
-  # interpolated value is shell source, so `$(...)` in a directory name would run.
-  # `expand: false` also stops GitLab expanding `$VAR` inside the value.
+  # interpolated value is shell source, so `$(...)` in a value would run. `expand: false`
+  # also stops GitLab expanding `$VAR` inside the value. The names are those scripts/ reads.
   variables:
+    JPIPE_JUSTIFICATION:
+      value: $[[ inputs.justification ]]
+      expand: false
+    JPIPE_LIBRARY:
+      value: $[[ inputs.library ]]
+      expand: false
+    JPIPE_PYTHON_PATH:
+      value: $[[ inputs.python-path ]]
+      expand: false
     JPIPE_WORKING_DIRECTORY:
       value: $[[ inputs.working-directory ]]
       expand: false
+    JPIPE_STRICT:
+      value: $[[ inputs.strict ]]
+      expand: false
+    JPIPE_DRY_RUN:
+      value: $[[ inputs.dry-run ]]
+      expand: false
+    JPIPE_JOBS:
+      value: $[[ inputs.jobs ]]
+      expand: false
+    JPIPE_INCREMENTAL_INPUT:
+      value: $[[ inputs.incremental ]]
+      expand: false
+    JPIPE_BASELINE:
+      value: $[[ inputs.baseline ]]
+      expand: false
+    JPIPE_DIAGRAM_FORMAT:
+      value: $[[ inputs.diagram-format ]]
+      expand: false
+    JPIPE_VERBOSITY:
+      value: $[[ inputs.verbosity ]]
+      expand: false
+    JPIPE_PYTHON_EXECUTABLE:
+      value: $[[ inputs.python-executable ]]
+      expand: false
+    JPIPE_RUNNER_VERSION:
+      value: $[[ inputs.runner-version ]]
+      expand: false
   # Script lines are block scalars: a plain YAML line containing ": " parses as a
-  # mapping, which GitLab rejects.
+  # mapping, which GitLab rejects. They run in one shell, one after the other.
   script:
     - |
-      cd "$JPIPE_WORKING_DIRECTORY"
-    # The job runs in the consumer's project, where scripts/ from this repository is
-    # not checked out; how it reaches the job is open (docs/adr/0001). Until then the
-    # placeholder is inlined.
+      # >>> scripts/: written by gitlab/inline.py, do not edit
+      JPIPE_SCRIPTS="$(mktemp -d)"
+      cat > "$JPIPE_SCRIPTS/comment.py" <<'JPIPE_SCRIPT_END'
+      """Write the Markdown that reports a run, from the JSON report jpipe-runner wrote.
+
+          python comment.py --result 1 --report report.json --text report.txt --log log.txt \
+              [--image-url URL] [--artifact-url URL] [--commit SHA] [--run-url URL] \
+              [--baseline TEXT] > comment.md
+
+      The comment says what the run concluded (the verdict), how many elements ended how, what
+      an incremental run ran again and why, the elements that did not pass and why, and every diagnostic with its fix; then the diagram,
+      the text report and the log, folded, and the commit and the run it reports. A comment that
+      later runs edit must say which run it shows. It reads the JSON report, the runner's contract
+      for programs, rather than its text output, whose layout may change. When there is no
+      report (a usage error, or a file that could not be read), it shows the runner's log; when
+      the report has a schema this action does not read (report.py), it says so, and shows the
+      text report and the log.
+
+      Platform-neutral, standard library only (docs/adr/0001).
+      """
+
+      import argparse
+      import sys
+      from pathlib import Path
+      from typing import Any
+
+      import report as reports
+
+      # GitHub refuses a comment longer than 65,536 characters, and the pull request then gets
+      # no report. Every part that grows with the model or the run has its own share, so that
+      # together they stay under it, with room left for the headline, the summary and the links:
+      # the elements that did not pass and the diagnostics are listed up to 12,000 characters
+      # each, what an incremental run ran again up to 8,000, and the folded text report and log
+      # are cut at 12,000 each.
+      _LISTED_LIMIT = 12_000
+      _SELECTION_LIMIT = 8_000
+      _FOLDED_LIMIT = 12_000
+
+      _HEADLINES = {
+          "pass": "✔ {subject} holds",
+          "fail": "✘ {subject} does not hold",
+          "skip": "{subject} was skipped",
+          "valid": "✔ {subject} is valid: a dry run, no step was called",
+          "invalid": "✘ {subject} could not run",
+      }
+
+
+      def render(
+          *,
+          result: int,
+          report: dict[str, Any] | None,
+          text: str,
+          log: str,
+          image_url: str = "",
+          artifact_url: str = "",
+          unreadable: str = "",
+          commit: str = "",
+          run_url: str = "",
+          baseline: str = "",
+      ) -> str:
+          """The comment for a run that exited with ``result`` and wrote ``report``, if any.
+
+          ``unreadable`` says why a report that was written could not be read, and ``baseline``
+          names the baseline of an incremental run for people, such as a commit.
+          """
+          parts = [_headline(result, report, unreadable)]
+          if report is not None:
+              parts.append(_summary(report))
+              parts.append(_selection(report, baseline or "the baseline"))
+              parts.extend(section for section in (_stopped(report), _diagnostics(report)) if section)
+          parts.append(_diagram(result, image_url, artifact_url))
+          parts.append(_folded("Text report", text))
+          parts.append(_folded("Log", log))
+          parts.append(_origin(commit, run_url))
+          return "\n\n".join(part for part in parts if part) + "\n"
+
+
+      def _headline(result: int, report: dict[str, Any] | None, unreadable: str) -> str:
+          if unreadable:
+              return f"### jpipe-runner exited with code {result}\n\nIt ran, but {unreadable}."
+          if report is None:
+              return f"### ✘ jpipe-runner stopped before it could report (exit code {result})"
+          # A refused model has no name: it could not be read.
+          name = report["justification"]
+          subject = f"The justification `{name}`" if name else "The justification"
+          return f"### {_HEADLINES[report['verdict']].format(subject=subject)} (exit code {result})"
+
+
+      def _summary(report: dict[str, Any]) -> str:
+          """The counts, in the order and the words of the runner's own summary."""
+          summary = report["summary"]
+          ended = [
+              f"{summary[key]} {label}"
+              for key, label in (("fail", "failed"), ("skip", "skipped"), ("pass", "passed"))
+              if summary[key]
+          ]
+          line = _counted(summary["elements"], "element")
+          if ended:
+              line += f" ({', '.join(ended)})"
+          found = [
+              _counted(summary[key], label)
+              for key, label in (("errors", "error"), ("warnings", "warning"))
+              if summary[key]
+          ]
+          if found:
+              line += f"; {_counted(summary['errors'] + summary['warnings'], 'diagnostic')}"
+              line += f" ({', '.join(found)})"
+          if report["strict"]:
+              line += "; a strict run"
+          return line + "."
+
+
+      def _selection(report: dict[str, Any], baseline: str) -> str:
+          """What an incremental run ran again, and why; nothing for a full run."""
+          selection = report.get("selection")
+          if not selection:
+              return ""
+          rerun = selection["rerun"]
+          if not rerun:
+              return f"Incremental run: nothing changed since {baseline}, every element reused."
+          if not any(element.get("reused") for element in report["elements"]):
+              reasons = set(rerun.values())
+              if reasons == {"there is no baseline"}:
+                  return "Incremental run without a baseline: every element ran."
+              if len(reasons) == 1:  # such as the baseline's model, or no baseline at all
+                  return f"Incremental run: every element ran again ({reasons.pop()})."
+              head = f"Incremental run: every element ran again since {baseline}."
+          else:
+              total = report["summary"]["elements"]
+              head = (
+                  f"Incremental run: {len(rerun)} of {total} elements ran again, "
+                  f"the rest reused from {baseline}."
+              )
+          labels = {element["id"]: element["label"] for element in report["elements"]}
+          rows = [
+              f"| {_cell(labels.get(element, ''))} | `{element}` | {_cell(why)} |"
+              for element, why in rerun.items()
+          ]
+          rows, more = _bounded(rows, "element", _SELECTION_LIMIT)
+          table = "\n".join(["| Element | Id | Why it ran again |", "|---|---|---|", *rows])
+          body = f"{table}\n\n{more}" if more else table
+          return f"{head}\n\n<details><summary>What ran again</summary>\n\n{body}\n\n</details>"
+
+
+      def _counted(count: int, noun: str) -> str:
+          return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+      def _stopped(report: dict[str, Any]) -> str:
+          """The elements that did not pass, and why."""
+          rows = [
+              f"| {'✘' if element['status'] == 'fail' else '-'} | {_cell(element['label'])} "
+              f"| `{element['id']}` | {_cell(element['reason'] or '')} |"
+              for element in report["elements"]
+              if element["status"] in ("fail", "skip")
+          ]
+          if not rows:
+              return ""
+          rows, more = _bounded(rows, "element")
+          table = "\n".join(["| | Element | Id | Why |", "|---|---|---|---|", *rows])
+          return f"{table}\n\n{more}" if more else table
+
+
+      def _diagnostics(report: dict[str, Any]) -> str:
+          items = []
+          for diagnostic in report["diagnostics"]:
+              where = f" [`{diagnostic['element']}`]" if diagnostic["element"] else ""
+              item = f"- `{diagnostic['code']}` {diagnostic['severity']}{where}: {diagnostic['message']}"
+              if diagnostic["fix"]:
+                  item += f"\n  Fix: {diagnostic['fix']}"
+              items.append(item)
+          items, more = _bounded(items, "diagnostic")
+          return "\n".join([*items, *([f"\n{more}"] if more else [])])
+
+
+      def _bounded(items: list[str], noun: str, limit: int = _LISTED_LIMIT) -> tuple[list[str], str]:
+          """The first ``items`` that fit in ``limit``, and a line saying what was left out."""
+          size = 0
+          for kept, item in enumerate(items):
+              size += len(item) + 1
+              if size > limit:
+                  left = _counted(len(items) - kept, noun)
+                  return items[:kept], f"… {left} not shown: see the JSON report in the artifact."
+          return items, ""
+
+
+      def _diagram(result: int, image_url: str, artifact_url: str) -> str:
+          link = f"[Download the diagram]({artifact_url})" if artifact_url else ""
+          if not image_url:
+              return link
+          image = f"![The justification's diagram, with the run over it]({image_url})"
+          body = "\n\n".join(part for part in (image, link) if part)
+          if result == 0:
+              return f"<details><summary>Diagram</summary>\n\n{body}\n\n</details>"
+          return body
+
+
+      def _origin(commit: str, run_url: str) -> str:
+          """The commit and the run the comment reports."""
+          parts = [f"commit `{commit[:12]}`" if commit else "", f"[this run]({run_url})" if run_url else ""]
+          parts = [part for part in parts if part]
+          return f"<sub>Reported on {' by '.join(parts)}.</sub>" if parts else ""
+
+
+      def _folded(title: str, content: str) -> str:
+          content = content.strip("\n")
+          if not content:
+              return ""
+          if len(content) > _FOLDED_LIMIT:
+              content = content[:_FOLDED_LIMIT] + "\n… (cut: see the job's log)"
+          fence = "````" if "```" in content else "```"
+          return f"<details><summary>{title}</summary>\n\n{fence}text\n{content}\n{fence}\n\n</details>"
+
+
+      def _cell(text: str) -> str:
+          """``text`` in a Markdown table cell: one line, its pipes escaped."""
+          return " ".join(text.split()).replace("|", "\\|")
+
+
+      def _read(path: str) -> str:
+          return Path(path).read_text(encoding="utf-8") if path and Path(path).is_file() else ""
+
+
+      def main(argv: list[str] | None = None) -> int:
+          parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+          parser.add_argument("--result", type=int, required=True, help="jpipe-runner's exit code")
+          parser.add_argument("--report", default="", help="the JSON report, if one was written")
+          parser.add_argument("--text", default="", help="the text report")
+          parser.add_argument("--log", default="", help="what jpipe-runner logged on stderr")
+          parser.add_argument("--image-url", default="", help="a URL the diagram can be shown from")
+          parser.add_argument("--artifact-url", default="", help="a URL the diagram can be downloaded from")
+          parser.add_argument("--commit", default="", help="the commit the run checked")
+          parser.add_argument("--run-url", default="", help="a URL of the CI run")
+          parser.add_argument("--baseline", default="", help="the baseline of an incremental run, for people")
+          options = parser.parse_args(argv)
+          try:
+              report, unreadable = reports.load(options.report), ""
+          except reports.Unreadable as error:
+              report, unreadable = None, str(error)
+          sys.stdout.write(
+              render(
+                  result=options.result,
+                  report=report,
+                  text=_read(options.text),
+                  log=_read(options.log),
+                  image_url=options.image_url,
+                  artifact_url=options.artifact_url,
+                  commit=options.commit,
+                  run_url=options.run_url,
+                  baseline=options.baseline,
+                  unreadable=unreadable,
+              )
+          )
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main())
+      JPIPE_SCRIPT_END
+      cat > "$JPIPE_SCRIPTS/graphviz.sh" <<'JPIPE_SCRIPT_END'
+      #!/usr/bin/env bash
+      # Install what drawing the diagram needs, when it is missing: Graphviz's dot, and for a
+      # format other than svg, a font with the status symbols.
+      #
+      # Environment:
+      #   JPIPE_DIAGRAM_FORMAT  The diagram's format; empty (no diagram) or dot needs nothing
+      #   JPIPE_WARNING         What a warning line starts with (default: "warning: "), such as
+      #                         a front end's annotation syntax
+      #
+      # Installs with apt-get, as root or through sudo; elsewhere it warns, and the runner says
+      # whether the diagram could be drawn. Platform-neutral (docs/adr/0001).
+      set -euo pipefail
+
+      format="${JPIPE_DIAGRAM_FORMAT:-}"
+      [[ -n "$format" && "$format" != "dot" ]] || exit 0
+
+      warn() {
+        echo "${JPIPE_WARNING-warning: }$1"
+      }
+
+      packages=()
+      command -v dot > /dev/null || packages+=(graphviz)
+      # The diagram marks each status with a symbol (✔ ✘ ◌ ⚠). An SVG leaves them to the
+      # browser; any other format draws them with a font installed here, and without one that
+      # has them, they come out as empty boxes. The list is read whole: grep -q stopping early
+      # must not make fc-list fail under pipefail.
+      fonts="$(fc-list : family 2> /dev/null || true)"
+      if [[ "$format" != "svg" ]] && ! grep -qi "DejaVu Sans" <<< "$fonts"; then
+        packages+=(fonts-dejavu-core)
+      fi
+
+      if (( ${#packages[@]} )); then
+        sudo=()
+        (( EUID == 0 )) || sudo=(sudo)
+        if ! command -v apt-get > /dev/null || { (( ${#sudo[@]} )) && ! command -v sudo > /dev/null; }; then
+          warn "cannot install ${packages[*]} here (no apt-get, or not root and no sudo): the $format diagram may not be drawn, or its status symbols may show as empty boxes"
+          exit 0
+        fi
+        "${sudo[@]}" env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+        "${sudo[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${packages[@]}" > /dev/null
+        echo "Installed: ${packages[*]}"
+      fi
+      echo "Graphviz: $(dot -V 2>&1)"
+      JPIPE_SCRIPT_END
+      cat > "$JPIPE_SCRIPTS/install.sh" <<'JPIPE_SCRIPT_END'
+      #!/usr/bin/env bash
+      # Install jpipe-runner into the Python that will run it.
+      #
+      # Environment:
+      #   JPIPE_PYTHON          Python interpreter to install into (default: python3)
+      #   JPIPE_RUNNER_VERSION  A release on PyPI (4.5.0), or a git ref of the jpipe-runner
+      #                         repository (main, a branch, a commit), installed from GitHub's
+      #                         archive of it, which needs no git where it runs.
+      #                         Default: 4.5.0, as action.yml's runner-version.
+      #
+      # Platform-neutral: no GitHub or GitLab variables (docs/adr/0001).
+      set -euo pipefail
+
+      python="${JPIPE_PYTHON:-python3}"
+      version="${JPIPE_RUNNER_VERSION:-4.5.0}"
+      repository="https://github.com/jpipe-mcscert/jpipe-runner"
+
+      # A PEP 440 release (4.0.0, 4.1.0rc1, 4.4.0.post1, 4.5.0.dev1) comes from PyPI; anything
+      # else is a git ref.
+      if [[ "$version" =~ ^[0-9]+(\.[0-9]+)*((a|b|rc)[0-9]+)?(\.post[0-9]+)?(\.dev[0-9]+)?$ ]]; then
+        requirement="jpipe-runner==${version}"
+      else
+        # The runner's version is written in its pyproject.toml, not read from git, so an
+        # archive builds as a clone would.
+        requirement="jpipe-runner @ ${repository}/archive/${version}.tar.gz"
+      fi
+
+      echo "Installing ${requirement} with $("$python" --version 2>&1) ($python)"
+      # -q -q keeps pip's progress out of the log; warnings and errors still print.
+      "$python" -m pip install -q -q --disable-pip-version-check --no-input "$requirement"
+      "$python" -m jpipe_runner --version
+      JPIPE_SCRIPT_END
+      cat > "$JPIPE_SCRIPTS/report.py" <<'JPIPE_SCRIPT_END'
+      """Read the JSON report jpipe-runner wrote, when this action knows its schema.
+
+          python report.py verdict report.json
+
+      prints the report's verdict, or nothing, with a warning on stderr, when the report cannot
+      be read: it is not JSON, or its schema has a major version this action does not read.
+      comment.py reads the report through ``load``.
+
+      Within a major version, a minor one only adds fields, and a new major version may rename
+      or remove one (jpipe-runner's docs/report-schema.md, Versioning). The fields this action
+      reads are in every major version listed in ``SUPPORTED``.
+
+      Platform-neutral, standard library only (docs/adr/0001).
+      """
+
+      import json
+      import sys
+      from pathlib import Path
+      from typing import Any
+
+      # 1.0: jpipe-runner 4.0; 2.0: 4.1 to 4.4; 2.1: 4.5.
+      SUPPORTED = ("1", "2")
+
+
+      class Unreadable(Exception):
+          """A report this action cannot read; its message says why, for the comment."""
+
+
+      def load(path: str) -> dict[str, Any] | None:
+          """The report at ``path``; None if there is none. Raises Unreadable."""
+          if not path or not Path(path).is_file():
+              return None
+          try:
+              report = json.loads(Path(path).read_text(encoding="utf-8"))
+          except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+              raise Unreadable(f"its JSON report could not be read: {error}") from error
+          version = str(report.get("schema_version", "")) if isinstance(report, dict) else ""
+          if version.partition(".")[0] not in SUPPORTED:
+              known = " and ".join(f"{major}.x" for major in SUPPORTED)
+              raise Unreadable(
+                  f"its JSON report has schema version `{version or 'unknown'}`, and this action"
+                  f" reads {known} only: a newer release of jpipe-ci-actions may read it"
+              )
+          return report
+
+
+      def main(argv: list[str]) -> int:
+          if len(argv) != 2 or argv[0] != "verdict":
+              print("usage: report.py verdict REPORT", file=sys.stderr)
+              return 2
+          try:
+              report = load(argv[1])
+          except Unreadable as error:
+              print(f"warning: jpipe-runner ran, but {error}", file=sys.stderr)
+              return 0
+          if report is not None:
+              print(report["verdict"])
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main(sys.argv[1:]))
+      JPIPE_SCRIPT_END
+      cat > "$JPIPE_SCRIPTS/run.sh" <<'JPIPE_SCRIPT_END'
+      #!/usr/bin/env bash
+      # Run jpipe-runner on a justification, and keep what it wrote for the steps after it.
+      #
+      # Environment (each front end maps its inputs to these):
+      #   JPIPE_PYTHON          Python interpreter that runs jpipe-runner (default: python3)
+      #   JPIPE_JUSTIFICATION   The justification, as the JSON file the jPipe compiler writes
+      #   JPIPE_LIBRARY         Step libraries, one per line (files or quoted globs)
+      #   JPIPE_PYTHON_PATH     Directories the libraries import modules from, one per line
+      #   JPIPE_STRICT          "true" counts validation warnings as errors, and fails a skip
+      #   JPIPE_DRY_RUN         "true" validates the libraries and calls no step
+      #   JPIPE_JOBS            Steps run at a time: a number, or auto; empty: the runner's default
+      #   JPIPE_VERBOSITY       quiet, normal (the default), verbose or debug; another value
+      #                         is a usage error, exit code 2
+      #   JPIPE_INCREMENTAL     A baseline: the JSON report of an earlier run, to run again only
+      #                         what changed since; one that does not exist runs everything.
+      #                         Empty: a full run. Needs jpipe-runner 4.5.0 or later
+      #   JPIPE_DIAGRAM_FORMAT  Format of the diagram (svg, png, pdf, dot, ...); empty: none
+      #   JPIPE_SUFFIX          Appended to the diagram's name, such as a commit SHA
+      #   JPIPE_OUTPUT_DIR      Directory the report, the logs and the diagram are written to
+      #   JPIPE_OUTPUTS         File that receives the outputs, one `key=value` per line
+      #
+      # Outputs: result (the runner's exit code), verdict, report, text, log, diagram. The
+      # verdict is empty when the report's schema is one this action does not read (report.py).
+      # The paths are absolute; one the run did not write is left empty.
+      #
+      # The command is an array: every value reaches jpipe-runner as one literal argument, and
+      # is never parsed by the shell (no eval). Platform-neutral (docs/adr/0001).
+      set -uo pipefail
+
+      python="${JPIPE_PYTHON:-python3}"
+      output_dir="${JPIPE_OUTPUT_DIR:?JPIPE_OUTPUT_DIR is required}"
+      outputs="${JPIPE_OUTPUTS:?JPIPE_OUTPUTS is required}"
+      justification="${JPIPE_JUSTIFICATION:?JPIPE_JUSTIFICATION is required}"
+      format="${JPIPE_DIAGRAM_FORMAT:-}"
+
+      mkdir -p "$output_dir"
+      output_dir="$(cd "$output_dir" && pwd)"
+      report="$output_dir/report.json"
+      text="$output_dir/report.txt"
+      log="$output_dir/log.txt"
+
+      name="$(basename "$justification")"
+      name="${name%.*}${JPIPE_SUFFIX:+-$JPIPE_SUFFIX}"
+      diagram=""
+
+      command=("$python" -m jpipe_runner)
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && command+=(--library "$line")
+      done <<< "${JPIPE_LIBRARY:-}"
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && command+=(--python-path "$line")
+      done <<< "${JPIPE_PYTHON_PATH:-}"
+      [[ "${JPIPE_STRICT:-false}" == "true" ]] && command+=(--strict)
+      [[ "${JPIPE_DRY_RUN:-false}" == "true" ]] && command+=(--dry-run)
+      [[ -n "${JPIPE_JOBS:-}" ]] && command+=(--jobs "$JPIPE_JOBS")
+      # A value the runner would not get is a usage error, reported as the runner reports one.
+      usage=""
+      case "${JPIPE_VERBOSITY:-normal}" in
+        quiet) command+=(-q) ;;
+        normal) ;;
+        verbose) command+=(-v) ;;
+        debug) command+=(-vv) ;;
+        *) usage="error: verbosity must be quiet, normal, verbose or debug, not '$JPIPE_VERBOSITY'" ;;
+      esac
+      if [[ -n "${JPIPE_INCREMENTAL:-}" ]]; then
+        # Asked of the runner rather than read from its version, which a git ref (dev) does not
+        # order. Read whole: grep -q stopping early must not fail the pipe.
+        help="$("$python" -m jpipe_runner --help 2>&1)"
+        if grep -q -- "--incremental" <<< "$help"; then
+          command+=(--incremental "$JPIPE_INCREMENTAL")
+        else
+          usage+="${usage:+$'\n'}error: incremental needs jpipe-runner 4.5.0 or later, not $("$python" -m jpipe_runner --version 2>&1)"
+        fi
+      fi
+      if [[ -n "$format" ]]; then
+        diagram="$output_dir/$name.$format"
+        command+=(--diagram "$diagram")
+      fi
+      command+=(--report "$report" --colour never "$justification")
+
+      # A file left by an earlier run in the same folder would be reported as this run's.
+      rm -f -- "$report" "$text" "$log" ${diagram:+"$diagram"}
+
+      if [[ -n "$usage" ]]; then
+        : > "$text"
+        echo "$usage" > "$log"
+        result=2
+        echo "jpipe-runner not run: usage error (exit code $result)"
+      else
+        # %q shows each argument as the shell would need it quoted, so the log is unambiguous.
+        printf 'Running:'
+        printf ' %q' "${command[@]}"
+        printf '\n'
+        "${command[@]}" > "$text" 2> "$log"
+        result=$?
+        echo "jpipe-runner exited with code $result"
+      fi
+      cat "$log" "$text"
+
+      # A file the run did not write is not reported: a usage error writes nothing, and a
+      # diagram that could not be drawn is not there.
+      existing() {
+        if [[ -n "$1" && -f "$1" ]]; then printf '%s' "$1"; fi
+      }
+      # Empty, with a warning, for a report whose schema this action does not read.
+      verdict="$("$python" "$(dirname "${BASH_SOURCE[0]}")/report.py" verdict "$report")"
+
+      {
+        echo "result=$result"
+        echo "verdict=$verdict"
+        echo "report=$(existing "$report")"
+        echo "text=$text"
+        echo "log=$log"
+        echo "diagram=$(existing "$diagram")"
+      } >> "$outputs"
+
+      # The runner's exit code is an output, not this script's: the front end reports the run
+      # before it fails the job.
+      exit 0
+      JPIPE_SCRIPT_END
+      # <<< scripts/
     - |
-      echo "jpipe-ci-actions: scaffold, no behaviour yet (running in $(pwd))."
+      export JPIPE_PYTHON="${JPIPE_PYTHON_EXECUTABLE:-python3}"
+      bash "$JPIPE_SCRIPTS/graphviz.sh"
+      bash "$JPIPE_SCRIPTS/install.sh"
+    - |
+      # A job's debug logging (CI_DEBUG_TRACE) logs the runner's details too, unless the
+      # pipeline chose a verbosity.
+      if [[ -z "$JPIPE_VERBOSITY" ]]; then
+        if [[ "${CI_DEBUG_TRACE:-}" == "true" ]]; then JPIPE_VERBOSITY=debug; else JPIPE_VERBOSITY=normal; fi
+      fi
+      # A dry run calls no step, so it reuses none: the runner refuses --incremental.
+      JPIPE_INCREMENTAL=""
+      if [[ "$JPIPE_INCREMENTAL_INPUT" == "true" && "$JPIPE_DRY_RUN" != "true" ]]; then
+        if [[ -n "$JPIPE_BASELINE" ]]; then
+          JPIPE_INCREMENTAL="$JPIPE_BASELINE"
+        else
+          echo "incremental: no baseline given, and this component keeps none yet: a full run"
+        fi
+      fi
+      export JPIPE_VERBOSITY JPIPE_INCREMENTAL
+      export JPIPE_SUFFIX="$CI_COMMIT_SHA"
+      export JPIPE_OUTPUT_DIR="$CI_PROJECT_DIR/.jpipe-runner"
+      export JPIPE_OUTPUTS="$JPIPE_SCRIPTS/outputs"
+      (cd "$JPIPE_WORKING_DIRECTORY" && bash "$JPIPE_SCRIPTS/run.sh")
+    - |
+      # The job fails with the runner's exit code, once the run is reported.
+      result="$(sed -n 's/^result=//p' "$JPIPE_OUTPUTS")"
+      echo "The reports and the diagram are in the job's artifacts, under .jpipe-runner/."
+      exit "${result:-1}"
+  artifacts:
+    name: $[[ inputs.artifact-name ]]
+    when: always
+    paths:
+      - .jpipe-runner/

@@ -5,7 +5,8 @@ Date: 2026-11-10
 ## Status
 
 Accepted. [ADR-0003](0003-the-default-runner-follows-semver.md) says how the default
-`runner-version` moves on from `4.0.0`.
+`runner-version` moves on from `4.0.0`; [ADR-0004](0004-the-gitlab-component-carries-scripts-inline.md)
+ends the GitLab scaffold.
 
 ## Context
 

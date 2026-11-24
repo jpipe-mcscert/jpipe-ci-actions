@@ -1,1 +1,3 @@
 __pycache__/
+# What the GitLab component's job writes, run here by gitlab/run-job.py.
+.jpipe-runner/

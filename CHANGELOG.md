@@ -8,6 +8,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The GitLab CI/CD component runs jPipe Runner**, as the action does on GitHub. It was
+  a scaffold that ran nothing. Its job installs the runner, runs the justification
+  against its step libraries, keeps the reports, the log and the diagram as the job's
+  artifacts, and fails with the runner's exit code. Its inputs are the action's, with the
+  same names and defaults, but for the GitHub-only ones; `stage`, `job-name` and `image`
+  are GitLab's own, and `incremental` needs `baseline` there. The image, by default
+  `python:3.11-slim`, needs bash and Python, with the packages the step libraries import
+  (#17, #18, [ADR-0004](docs/adr/0004-the-gitlab-component-carries-scripts-inline.md)).
+
 ## [2.0.0] - 2026-11-24
 
 ### Added

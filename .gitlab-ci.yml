@@ -1,14 +1,101 @@
 # Pipeline of the GitLab mirror. GitHub is the source of truth (docs/adr/0001) and
 # pushes here through .github/workflows/mirror.yml: this file only tests the component
 # as GitLab sees it and publishes it to the CI/CD Catalog when a release tag arrives.
+# GitHub's CI runs the component's job before (gitlab/run-job.py); this runs it on GitLab.
 
-stages: [test, release]
+stages: [test, check, release]
 
+# The component from this very commit, as a consumer would include it: three times, each
+# job named after its include.
 include:
-  # Test the component from this very commit, as a consumer would include it.
+  # The example.
   - component: $CI_SERVER_FQDN/$CI_PROJECT_PATH/jpipe-runner@$CI_COMMIT_SHA
     inputs:
-      stage: test
+      job-name: jpipe-example
+      working-directory: example
+      justification: justification.json
+      library: steps.py
+  # The inputs the example leaves unset.
+  - component: $CI_SERVER_FQDN/$CI_PROJECT_PATH/jpipe-runner@$CI_COMMIT_SHA
+    inputs:
+      job-name: jpipe-options
+      working-directory: example
+      justification: justification.json
+      library: steps.py
+      jobs: auto
+      verbosity: debug
+      diagram-format: png
+      artifact-name: jpipe-options
+  # Shell syntax in the inputs: the runner must refuse them, and no payload run.
+  - component: $CI_SERVER_FQDN/$CI_PROJECT_PATH/jpipe-runner@$CI_COMMIT_SHA
+    inputs:
+      job-name: jpipe-hostile
+      working-directory: example
+      justification: "justification.json; touch INJECTED-justification"
+      library: |
+        steps.py
+        $(touch INJECTED-library)
+        `touch INJECTED-backtick`
+      python-path: "src'; touch INJECTED-python-path; echo '"
+      jobs: "2; touch INJECTED-jobs"
+      incremental: "true"
+      baseline: "base.json'; touch INJECTED-baseline; echo '"
+      artifact-name: "jpipe-$(touch INJECTED-artifact-name)"
+
+# Merged with the included job: it fails, as it should, and keeps any payload's file for
+# check-hostile to look for.
+jpipe-hostile:
+  allow_failure: true
+  artifacts:
+    paths:
+      - .jpipe-runner/
+      - INJECTED*
+      - example/INJECTED*
+
+# Each check reads one job's artifacts: they would overwrite each other in one job.
+check-example:
+  stage: check
+  image: python:3.11-slim
+  needs: [jpipe-example]
+  script:
+    - |
+      python3 - <<'EOF'
+      import json, pathlib
+      out = pathlib.Path(".jpipe-runner")
+      report = json.loads((out / "report.json").read_text())
+      assert report["verdict"] == "pass" and report["summary"]["pass"] == 4, report["summary"]
+      assert list(out.glob("*.svg")), "no SVG diagram"
+      print("the job passed, and wrote the report and an SVG diagram")
+      EOF
+
+check-options:
+  stage: check
+  image: python:3.11-slim
+  needs: [jpipe-options]
+  script:
+    - |
+      python3 - <<'EOF'
+      import pathlib
+      out = pathlib.Path(".jpipe-runner")
+      (diagram,) = out.glob("*.png")
+      assert diagram.read_bytes()[1:4] == b"PNG", diagram
+      assert (out / "log.txt").stat().st_size, "verbosity: debug logged nothing"
+      print("the job wrote a PNG diagram, and logged at debug")
+      EOF
+
+check-hostile:
+  stage: check
+  image: python:3.11-slim
+  needs: [jpipe-hostile]
+  script:
+    - |
+      python3 - <<'EOF'
+      import pathlib
+      injected = [str(path) for path in pathlib.Path(".").rglob("INJECTED*")]
+      assert not injected, f"a payload ran: {injected}"
+      assert (pathlib.Path(".jpipe-runner") / "log.txt").stat().st_size, "the run logged nothing"
+      print("the runner refused the inputs, and no payload ran")
+      EOF
 
 lint-scripts:
   stage: test
