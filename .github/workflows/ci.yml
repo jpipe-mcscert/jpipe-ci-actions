@@ -93,6 +93,46 @@ jobs:
           done
           jq -e '.verdict == "pass" and .summary.pass == 4' "$REPORT"
 
+  # The inputs the other jobs leave unset: steps run together, the runner's details in the
+  # log, and a PNG diagram, whose status symbols need a font where Graphviz runs. On the
+  # usual image and on the slim one, which has less installed. CI checks that a PNG is
+  # drawn, not how it looks: its artifact is there to look at.
+  options:
+    name: options (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-slim]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the action with jobs, debug logs and a PNG diagram
+        id: run
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          jobs: auto
+          verbosity: debug
+          diagram-format: png
+          artifact-name: jpipe-runner-options-${{ matrix.os }}
+          comment: "false"
+
+      - name: Check its outputs
+        env:
+          RESULT: ${{ steps.run.outputs.result }}
+          REPORT: ${{ steps.run.outputs.report }}
+          DIAGRAM: ${{ steps.run.outputs.diagram }}
+        run: |
+          [[ "$RESULT" == "0" ]] || { echo "::error::result $RESULT"; exit 1; }
+          # A PNG file starts with \x89PNG.
+          [[ "$(head -c 4 "$DIAGRAM" | tail -c 3)" == "PNG" ]] || { echo "::error::not a PNG: '$DIAGRAM'"; exit 1; }
+          # The log is beside the report; at debug, a run that passes still logs.
+          [[ -s "$(dirname "$REPORT")/log.txt" ]] || { echo "::error::verbosity: debug logged nothing"; exit 1; }
+          echo "fonts: $(fc-list : family | grep -i "DejaVu Sans" | head -1)"
+
   # Two runs in one job, as artifact-name allows: the second stops before writing anything,
   # and must not report the first run's report or diagram as its own.
   two-runs:

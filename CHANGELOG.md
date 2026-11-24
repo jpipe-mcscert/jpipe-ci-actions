@@ -8,7 +8,31 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`jobs` runs independent steps together**: up to that many at a time, or one per CPU
+  with `auto`, when the argument does not order them (jPipe Runner's `--jobs`, 4.4.0 or
+  later). Empty by default: one step at a time. The step libraries must be written for it
+  (#13).
+- **`verbosity` sets what jPipe Runner logs**: `quiet`, `normal` (the default), `verbose`
+  or `debug`. The log, in the comment and the artifact, then says which Python ran the
+  steps, the libraries a glob matched and `sys.path`, which a library that cannot be
+  imported (`JP020`) needs. A re-run with debug logging turned on uses `debug`, unless the
+  workflow set a verbosity (#9).
+
 ### Changed
+- **⚠️ Breaking: the action installs jPipe Runner 4.5.0 by default**, where it installed
+  4.0.0. `runner-version: 4.0.0` keeps the old one. The runner's breaking changes since
+  4.0.0 reach workflows that leave `runner-version` unset (README, *Upgrading from 1.x*):
+  - the paths an evidence observes are relative to the step library's file, no longer to
+    `working-directory`: a library outside it fails with `JP019` until its paths are
+    rewritten (4.1.0);
+  - a composed model compiled by jPipe older than 4.0.0 stops with `JP016`, and must be
+    compiled again (4.3.0);
+  - `JP027` is a new warning, which `strict: true` counts as an error (4.3.0).
+
+  From now on the default follows the runner's semantic version: a minor or patch release
+  of the runner moves it in a minor or patch release of the action, and a major one in a
+  major release ([ADR-0003](docs/adr/0003-the-default-runner-follows-semver.md), #11).
 - **The pull request keeps one comment per workflow and artifact name.** Each run added
   a new comment, and a pull request pushed ten times collected ten reports. A run now
   edits the comment the action wrote before, found by a hidden marker on its first line,
@@ -19,6 +43,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   after upgrading adds one more comment, which later runs edit (#10).
 
 ### Fixed
+- **A PNG, PDF, JPEG or GIF diagram shows its status symbols** (✔ ✘ ◌ ⚠), which jPipe
+  Runner draws since 4.1.0. Graphviz draws them with a font installed on the machine, and
+  without one that has them they came out as empty boxes: for a format other than `svg`,
+  the action now installs DejaVu Sans when it is missing (#14).
 - **A report the action cannot read no longer costs the comment.** The action reads the
   JSON report of schema versions 1.x and 2.x, those of jPipe Runner 4.0 to 4.5. A report
   of another version, from a future runner, or one that is not JSON, crashed the comment
