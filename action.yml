@@ -235,20 +235,26 @@ runs:
           const body = `${marker}\n${require("fs").readFileSync(process.env.COMMENT, "utf8")}`;
           const issue = { ...context.repo, issue_number: context.issue.number };
           try {
+            // Runs of successive pushes can end out of order: a run whose commit is no
+            // longer the pull request's head leaves the comment to the run of the head.
+            const { data: pull } = await github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number });
+            if (pull.head.sha !== context.payload.pull_request.head.sha) {
+              core.info(`Not commenting: the pull request's head is now ${pull.head.sha}, whose run reports it`);
+              return;
+            }
             // Only a comment of the token's own identity is edited, never one that
-            // someone else wrote with the marker. A bot's login may end with [bot] in
-            // one API and not in the other. A token that cannot say who it is posts a
-            // new comment, as it did before.
-            const self = (login) => login?.replace(/\[bot\]$/, "");
-            const login = await github.graphql("query { viewer { login } }").then(
-              ({ viewer }) => self(viewer.login),
+            // someone else wrote with the marker; by id, as a bot's login and its
+            // owner's may differ by [bot] alone. A token that cannot say who it is
+            // posts a new comment, as it did before.
+            const self = await github.graphql("query { viewer { databaseId } }").then(
+              ({ viewer }) => viewer.databaseId,
               (error) => core.warning(`Posting a new comment: the token's identity is unknown (${error.message})`),
             );
-            const comments = login
+            const comments = self
               ? await github.paginate(github.rest.issues.listComments, { ...issue, per_page: 100 })
               : [];
             const [earlier, ...extra] = comments.filter(
-              (comment) => self(comment.user?.login) === login && comment.body?.startsWith(marker),
+              (comment) => comment.user?.id === self && comment.body?.startsWith(marker),
             );
             const { data } = earlier
               ? await github.rest.issues.updateComment({ ...context.repo, comment_id: earlier.id, body })

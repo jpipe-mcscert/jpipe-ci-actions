@@ -14,7 +14,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   edits the comment the action wrote before, found by a hidden marker on its first line,
   and `comment-id` is that comment's id; GitHub keeps the earlier reports in the
   comment's edit history. The comment, and the job summary, end with the commit and the
-  run they report. Comments written by earlier releases have no marker: the first run
+  run they report, and a run whose commit is no longer the pull request's head leaves
+  the comment alone. Comments written by earlier releases have no marker: the first run
   after upgrading adds one more comment, which later runs edit (#10).
 
 ### Fixed

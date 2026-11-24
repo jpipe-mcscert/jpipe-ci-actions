@@ -39,7 +39,10 @@ pull request, the action comments with the verdict, the elements that did not pa
 why, every diagnostic with its fix, and the text report. Later runs edit that comment
 rather than add one: the pull request keeps one comment per workflow and artifact name,
 which names the commit and the run it reports, and GitHub keeps the earlier reports in
-the comment's history. The
+the comment's history. A run whose commit is no longer the pull request's head leaves
+the comment alone. Runs that overlap can still finish out of order: to keep the newest,
+give the job a `concurrency` group keyed on the pull request, with
+`cancel-in-progress: true`. The
 same comment is the job's summary, and the JSON report, the text report, the log and the
 diagram are uploaded as an artifact.
 

@@ -179,10 +179,14 @@ jobs:
           set -o pipefail
           [[ -n "$COMMENT_ID" ]] || { echo "::error::the action did not comment"; exit 1; }
           # The comment's first line is the marker that tells this job's comments apart; a
-          # comment edited on the web has CRLF line ends.
-          marker="$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" --jq '.body | split("\n")[0] | rtrimstr("\r")')"
+          # comment edited on the web has CRLF line ends. Only the action's own count: it
+          # leaves alone a comment someone else wrote with the marker.
+          comment="$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID")"
+          marker="$(jq -r '.body | split("\n")[0] | rtrimstr("\r")' <<< "$comment")"
+          author="$(jq -r '.user.id' <<< "$comment")"
           count="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PULL_REQUEST/comments" \
-            | jq -s --arg marker "$marker" '[.[][] | select(.body | startswith($marker))] | length')"
+            | jq -s --arg marker "$marker" --argjson author "$author" \
+                '[.[][] | select(.user.id == $author and (.body | startswith($marker)))] | length')"
           [[ "$count" == 1 ]] || { echo "::error::$count comments start with $marker, expected 1"; exit 1; }
           echo "one comment of this job's on the pull request: $COMMENT_ID"
 
