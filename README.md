@@ -81,7 +81,7 @@ include:
 | `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. |
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11. |
 | `runner-version` | `4.0.0` | jPipe Runner to install: a release on PyPI (`4.0.0`), or a git ref of its repository. |
-| `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. |
+| `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. In a matrix, the default is `jpipe-runner-<job>-<index>`, the job's index in the matrix; name it after a matrix value instead (`jpipe-${{ matrix.os }}`) to tell the artifacts apart. Set it in a reusable workflow called from a matrix, which sees only its own job. |
 | `comment` | `true` | Comment on the pull request. |
 | `embed-image` | `false` | Commit the diagram to `image-branch`, and show it in the comment. |
 | `image-repo` | this repository | Repository (`owner/name`) the diagram is committed to. |

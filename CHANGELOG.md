@@ -9,6 +9,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **The action runs in a matrix without `artifact-name`.** Every job of a matrix took
+  the default artifact name, `jpipe-runner-<job>`, and an artifact name must be unique
+  in a run, so every job after the first failed to upload its reports. In a matrix, the
+  default name now ends with the job's index in it: `jpipe-runner-<job>-<index>`. A job
+  outside a matrix keeps its name. **A matrix job that uploaded alone**, its action step
+  skipped in the other jobs, **is renamed** too: a later job that downloads
+  `jpipe-runner-<job>` must set `artifact-name`. So must a reusable workflow called from
+  a matrix, which sees only its own job (#22).
 - **`runner-version` installs post and dev releases from PyPI**, such as `4.4.0.post1`
   or `4.5.0.dev1`. It took them for git refs of jpipe-runner's repository, which do not
   exist, and the installation failed.
