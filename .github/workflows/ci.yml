@@ -85,6 +85,8 @@ jobs:
 
       - name: Run the job with shell syntax in its inputs
         run: |
+          # The example's output must not stand for this run's: the check below reads it.
+          rm -rf .jpipe-runner
           set +e
           python3 gitlab/run-job.py --input working-directory=example \
             --input "justification=justification.json; touch INJECTED-justification" \
