@@ -177,10 +177,13 @@ runs:
         # The ref follows the first "@refs/": a branch's name may hold an @ of its own.
         workflow="${GITHUB_WORKFLOW_REF%%@refs/*}"
         cache_key="jpipe-runner-baseline-${workflow#*/*/}-$ARTIFACT_NAME-"
+        # The cache reads its path as a glob: the file is named by a checksum of the
+        # artifact's name, which may hold [, * or ?.
+        read -r checksum _ < <(printf '%s' "$ARTIFACT_NAME" | cksum)
         {
           echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")"
           echo "artifact-name=$ARTIFACT_NAME"
-          echo "baseline=$RUNNER_TEMP/jpipe-runner-baseline/$ARTIFACT_NAME.json"
+          echo "baseline=$RUNNER_TEMP/jpipe-runner-baseline/$checksum.json"
           echo "cache-key=${cache_key//,/_}"
         } >> "$GITHUB_OUTPUT"
 
