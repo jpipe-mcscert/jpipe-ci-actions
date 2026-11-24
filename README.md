@@ -38,7 +38,8 @@ The job fails when the justification does not hold, with jPipe Runner's exit cod
 pull request, the action comments with the verdict, the elements that did not pass and
 why, every diagnostic with its fix, and the text report. Later runs edit that comment
 rather than add one: the pull request keeps one comment per workflow and artifact name,
-which shows the last run, and GitHub keeps the earlier ones in the comment's history. The
+which names the commit and the run it reports, and GitHub keeps the earlier reports in
+the comment's history. The
 same comment is the job's summary, and the JSON report, the text report, the log and the
 diagram are uploaded as an artifact.
 
@@ -83,7 +84,7 @@ include:
 | `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. |
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11. |
 | `runner-version` | `4.0.0` | jPipe Runner to install: a release on PyPI (`4.0.0`), or a git ref of its repository. |
-| `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. In a matrix, the default is `jpipe-runner-<job>-<index>`, the job's index in the matrix; name it after a matrix value instead (`jpipe-${{ matrix.os }}`) to tell the artifacts apart. Set it in a reusable workflow called from a matrix, which sees only its own job. |
+| `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. In a matrix, the default is `jpipe-runner-<job>-<index>`, the job's index in the matrix; name it after a matrix value instead (`jpipe-${{ matrix.os }}`) to tell the artifacts apart, and to keep each job's comment on the pull request when the matrix changes. Set it in a reusable workflow called from a matrix, which sees only its own job. |
 | `comment` | `true` | Comment on the pull request, and edit that comment on later runs. |
 | `embed-image` | `false` | Commit the diagram to `image-branch`, and show it in the comment. |
 | `image-repo` | this repository | Repository (`owner/name`) the diagram is committed to. |

@@ -151,6 +151,11 @@ jobs:
   comment:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # Two runs at once could each post a comment; the next run would delete one, but this
+    # run's check would count two.
+    concurrency:
+      group: comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: write
@@ -173,10 +178,11 @@ jobs:
         run: |
           set -o pipefail
           [[ -n "$COMMENT_ID" ]] || { echo "::error::the action did not comment"; exit 1; }
-          # The comment's first line is the marker that tells this job's comments apart.
-          marker="$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" --jq '.body | split("\n")[0]')"
+          # The comment's first line is the marker that tells this job's comments apart; a
+          # comment edited on the web has CRLF line ends.
+          marker="$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" --jq '.body | split("\n")[0] | rtrimstr("\r")')"
           count="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PULL_REQUEST/comments" \
-            | jq -s --arg marker "$marker" '[.[][] | select(.body | startswith($marker + "\n"))] | length')"
+            | jq -s --arg marker "$marker" '[.[][] | select(.body | startswith($marker))] | length')"
           [[ "$count" == 1 ]] || { echo "::error::$count comments start with $marker, expected 1"; exit 1; }
           echo "one comment of this job's on the pull request: $COMMENT_ID"
 
