@@ -46,6 +46,72 @@ jobs:
       - name: Lint shell scripts
         run: shellcheck scripts/*.sh github/*.sh
 
+      - name: Check that the GitLab component holds scripts/ as it is
+        run: python3 gitlab/inline.py --check
+
+  # The GitLab component's job, in its default image, before it reaches GitLab: GitLab
+  # runs it only once a release is merged into main (docs/adr/0001). gitlab/run-job.py
+  # gives it its inputs as GitLab does, and runs its script. The example with the inputs
+  # it leaves unset, then hostile inputs, which must run nothing.
+  gitlab-component:
+    runs-on: ubuntu-latest
+    container: python:3.11-slim
+    defaults:
+      run:
+        shell: bash
+    env:
+      CI_COMMIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install PyYAML, which gitlab/run-job.py reads the template with
+        run: python3 -m pip install -q -q --disable-pip-version-check pyyaml
+
+      - name: Run the job on the example, with jobs, debug logs and a PNG diagram
+        run: |
+          python3 gitlab/run-job.py --input working-directory=example \
+            --input justification=justification.json --input library=steps.py \
+            --input jobs=auto --input verbosity=debug --input diagram-format=png
+          python3 - <<'EOF'
+          import json, pathlib
+          out = pathlib.Path(".jpipe-runner")
+          report = json.loads((out / "report.json").read_text())
+          assert report["verdict"] == "pass" and report["summary"]["pass"] == 4, report["summary"]
+          (diagram,) = out.glob("*.png")
+          assert diagram.read_bytes()[1:4] == b"PNG", diagram
+          assert (out / "log.txt").stat().st_size, "verbosity: debug logged nothing"
+          print("the job passed, and wrote the report, the log and a PNG diagram")
+          EOF
+
+      - name: Run the job with shell syntax in its inputs
+        run: |
+          # The example's output must not stand for this run's: the check below reads it.
+          rm -rf .jpipe-runner
+          set +e
+          python3 gitlab/run-job.py --input working-directory=example \
+            --input "justification=justification.json; touch INJECTED-justification" \
+            --input "library=steps.py
+          \$(touch INJECTED-library)
+          \`touch INJECTED-backtick\`" \
+            --input "python-path=src'; touch INJECTED-python-path; echo '"
+          first=$?
+          # The runner ran and refused: not run-job.py refusing its arguments.
+          [[ -s .jpipe-runner/log.txt ]] || { echo "::error::the job did not run (exit code $first)"; exit 1; }
+          python3 gitlab/run-job.py --input working-directory=example \
+            --input justification=justification.json --input library=steps.py \
+            --input "jobs=2; touch INJECTED-jobs" \
+            --input "verbosity=\$(touch INJECTED-verbosity)" \
+            --input incremental=true --input "baseline=base.json'; touch INJECTED-baseline; echo '" \
+            --input "diagram-format=png; touch INJECTED-diagram-format" \
+            --input "artifact-name=jpipe-\$(touch INJECTED-artifact-name)" \
+            --input "job-name=jpipe-\$(touch INJECTED-job-name)"
+          second=$?
+          set -e
+          [[ "$first" != "0" && "$second" == "2" ]] || { echo "::error::expected the inputs refused, got exit codes $first and $second"; exit 1; }
+          injected="$(find "$GITHUB_WORKSPACE" /tmp -name 'INJECTED*')"
+          [[ -z "$injected" ]] || { echo "::error::a payload ran: $injected"; exit 1; }
+          echo "the job refused the inputs (exit codes $first and $second), and no payload ran"
+
   # Runs the action from this checkout on the example, with the real runner: catches a
   # broken wiring in action.yml, and a runner release that the action does not follow.
   # Each runner from `runners`, and the runner's dev branch, which may break without

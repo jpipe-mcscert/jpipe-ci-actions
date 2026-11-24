@@ -8,6 +8,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The GitLab CI/CD component runs jPipe Runner**, as the action does on GitHub. It was
+  a scaffold that ran nothing. Its job installs the runner, runs the justification
+  against its step libraries, keeps the reports, the log and the diagram as the job's
+  artifacts, and fails with the runner's exit code. Its inputs are the action's, with the
+  same names and defaults, but for the GitHub-only ones; `stage`, `job-name` and `image`
+  are GitLab's own, and `incremental` needs `baseline` there. The image, by default
+  `python:3.11-slim`, needs bash and Python, with the packages the step libraries import
+  (#17, #18, [ADR-0004](docs/adr/0004-the-gitlab-component-carries-scripts-inline.md)).
+
+### Fixed
+- **Installing Graphviz no longer fails the action where it cannot run `sudo apt-get`.**
+  It ran `sudo` even as root, and failed in a container without it; without `apt-get`,
+  or without a `sudo` that asks no password, it failed when `dot` was missing. It now
+  installs as root without `sudo`, and elsewhere warns that the diagram may not be drawn.
+- **A relative `python-executable` with a `working-directory`** ran jPipe Runner with
+  another Python than the one it was installed into, found from `working-directory`
+  rather than the workspace. Both now use the workspace's.
+- **A git ref as `runner-version` installs where there is no git**, from GitHub's
+  archive of it.
+
 ## [2.0.0] - 2026-11-24
 
 ### Added

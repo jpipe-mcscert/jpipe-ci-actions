@@ -13,10 +13,12 @@ source of truth; `.github/workflows/mirror.yml` pushes `main` and the tags to
   input only makes sense on one platform; say so in a comment next to it.
 - **Shared logic goes in `scripts/`**, reading plain environment variables (`JPIPE_*`).
   No `GITHUB_*` or `CI_*` variables there; platform-specific steps stay in their front
-  end, and their scripts in `github/` (later `gitlab/`).
-- **For now the GitLab component is a scaffold** that does not mirror the action's inputs
-  ([ADR-0002](docs/adr/0002-runner-4-github-first.md)): the parity rule above applies
-  again once it runs the runner.
+  end, and the GitHub Action's scripts in `github/`.
+- **The GitLab component carries a generated copy of `scripts/`**
+  ([ADR-0004](docs/adr/0004-the-gitlab-component-carries-scripts-inline.md)). After
+  changing `scripts/`, run `python3 gitlab/inline.py` and commit the template with it;
+  never edit the block between its markers. `gitlab/run-job.py` runs the component's job
+  outside GitLab, as `ci.yml` does.
 - **The action reads jPipe Runner's JSON report**, never its text output, whose layout
   may change: `scripts/comment.py` builds the comment from it.
 - **Testing is running the action**, not unit tests: `ci.yml` runs it on `example/` with
