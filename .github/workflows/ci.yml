@@ -254,10 +254,11 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Two runs at once could each post a comment; the next run would delete one, but this
-    # run's check would count two.
+    # run's check would count two. A newer run cancels this one: once the head moved, the
+    # action leaves the comment alone, and the check would find none.
     concurrency:
       group: comment-${{ github.event.pull_request.number }}
-      cancel-in-progress: false
+      cancel-in-progress: true
     permissions:
       contents: read
       pull-requests: write
@@ -315,11 +316,29 @@ jobs:
             src'; touch INJECTED-python-path; echo '
           comment: "false"
 
+      - name: Run the action with shell syntax in its other inputs
+        id: others
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          jobs: "2; touch INJECTED-jobs"
+          verbosity: "$(touch INJECTED-verbosity)"
+          incremental: "true"
+          baseline: "base.json'; touch INJECTED-baseline; echo '"
+          diagram-format: "png; touch INJECTED-diagram-format"
+          artifact-name: "jpipe-$(touch INJECTED-artifact-name)"
+          comment: "false"
+
       - name: Check that nothing ran
         env:
           RESULT: ${{ steps.run.outputs.result }}
+          OTHERS: ${{ steps.others.outputs.result }}
         run: |
           [[ -n "$RESULT" && "$RESULT" != "0" ]] || { echo "::error::expected the runner to refuse the inputs, got result '$RESULT'"; exit 1; }
+          [[ "$OTHERS" == "2" ]] || { echo "::error::expected a usage error for the other inputs, got result '$OTHERS'"; exit 1; }
           injected="$(find "$GITHUB_WORKSPACE" "$RUNNER_TEMP" -name 'INJECTED*')"
           [[ -z "$injected" ]] || { echo "::error::a payload ran: $injected"; exit 1; }
           echo "the runner refused the inputs (exit code $RESULT), and no payload ran"
