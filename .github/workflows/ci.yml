@@ -2,13 +2,39 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
+  # Weekly, so that a new jpipe-runner release is tried even when nothing is pushed here.
+  schedule:
+    - cron: "17 6 * * 1"
 
 permissions:
   contents: read
 
 jobs:
+  # The jpipe-runner releases the action is run with: the default `runner-version`, as
+  # action.yml declares it, and the latest release on PyPI. A value that is not a version
+  # fails this job: an unreachable PyPI must not turn "latest" into the default.
+  runners:
+    runs-on: ubuntu-latest
+    outputs:
+      default: ${{ steps.resolve.outputs.default }}
+      latest: ${{ steps.resolve.outputs.latest }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve the default and the latest jpipe-runner
+        id: resolve
+        run: |
+          set -o pipefail
+          default="$(yq -e '.inputs["runner-version"].default' action.yml)"
+          latest="$(curl -fsSL https://pypi.org/pypi/jpipe-runner/json | jq -er .info.version)"
+          for version in "$default" "$latest"; do
+            [[ "$version" =~ ^[0-9]+(\.[0-9]+)*[0-9a-z.]*$ ]] || { echo "::error::not a jpipe-runner version: '$version'"; exit 1; }
+          done
+          echo "default runner-version: $default; latest release on PyPI: $latest"
+          { echo "default=$default"; echo "latest=$latest"; } >> "$GITHUB_OUTPUT"
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -21,10 +47,25 @@ jobs:
         run: shellcheck scripts/*.sh github/*.sh
 
   # Runs the action from this checkout on the example, with the real runner: catches a
-  # broken wiring in action.yml, and a runner release (the default `runner-version`)
-  # that the action does not follow.
+  # broken wiring in action.yml, and a runner release that the action does not follow.
+  # Each runner from `runners`, and the runner's dev branch, which may break without
+  # failing the workflow: it shows a break before it is released. The jobs are named after
+  # the runner's role, not its version, so that their names stay put across releases.
   self-test:
+    name: self-test (${{ matrix.runner }} runner)
+    needs: runners
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.runner == 'dev' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: default
+            version: ${{ needs.runners.outputs.default }}
+          - runner: latest
+            version: ${{ needs.runners.outputs.latest }}
+          - runner: dev
+            version: dev
     steps:
       - uses: actions/checkout@v7
 
@@ -35,7 +76,8 @@ jobs:
           working-directory: example
           justification: justification.json
           library: steps.py
-          dataflow: "true"
+          runner-version: ${{ matrix.version }}
+          # No artifact-name: in this matrix, each job's default name must differ (#22).
           comment: "false"
 
       - name: Check its outputs
@@ -44,18 +86,129 @@ jobs:
           VERDICT: ${{ steps.run.outputs.verdict }}
           REPORT: ${{ steps.run.outputs.report }}
           DIAGRAM: ${{ steps.run.outputs.diagram }}
-          DATAFLOW: ${{ steps.run.outputs.dataflow }}
         run: |
           [[ "$RESULT" == "0" && "$VERDICT" == "pass" ]] || { echo "::error::result $RESULT, verdict $VERDICT"; exit 1; }
-          for file in "$REPORT" "$DIAGRAM" "$DATAFLOW"; do
+          for file in "$REPORT" "$DIAGRAM"; do
             [[ -s "$file" ]] || { echo "::error::missing output file: '$file'"; exit 1; }
           done
           jq -e '.verdict == "pass" and .summary.pass == 4' "$REPORT"
 
+  # The inputs the other jobs leave unset: steps run together, the runner's details in the
+  # log, and a PNG diagram, whose status symbols need a font where Graphviz runs. On the
+  # usual image and on the slim one, which has less installed. CI checks that a PNG is
+  # drawn, not how it looks: its artifact is there to look at.
+  options:
+    name: options (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-slim]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the action with jobs, debug logs and a PNG diagram
+        id: run
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          jobs: auto
+          verbosity: debug
+          diagram-format: png
+          artifact-name: jpipe-runner-options-${{ matrix.os }}
+          comment: "false"
+
+      - name: Check its outputs
+        env:
+          RESULT: ${{ steps.run.outputs.result }}
+          REPORT: ${{ steps.run.outputs.report }}
+          DIAGRAM: ${{ steps.run.outputs.diagram }}
+        run: |
+          [[ "$RESULT" == "0" ]] || { echo "::error::result $RESULT"; exit 1; }
+          # A PNG file starts with \x89PNG.
+          [[ "$(head -c 4 "$DIAGRAM" | tail -c 3)" == "PNG" ]] || { echo "::error::not a PNG: '$DIAGRAM'"; exit 1; }
+          # The log is beside the report; at debug, a run that passes still logs.
+          [[ -s "$(dirname "$REPORT")/log.txt" ]] || { echo "::error::verbosity: debug logged nothing"; exit 1; }
+          echo "fonts: $(fc-list : family | grep -i "DejaVu Sans" | head -1)"
+
+  # Incremental runs. With the cache, a push to dev runs in full and saves its report, and
+  # a pull request starts from the last one dev saved. With `baseline`, a run starts from
+  # the file given; nothing changed since, so it reuses every element. An older runner
+  # refuses incremental.
+  incremental:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run with the baseline in the cache
+        id: cache
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          incremental: "true"
+          artifact-name: jpipe-runner-incremental-cache
+          comment: "false"
+
+      - name: Run again from the first run's report
+        id: file
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          incremental: "true"
+          baseline: ${{ steps.cache.outputs.report }}
+          artifact-name: jpipe-runner-incremental-file
+          comment: "false"
+
+      - name: Run with a runner older than 4.5.0
+        id: old
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          runner-version: 4.4.0
+          incremental: "true"
+          baseline: ${{ steps.cache.outputs.report }}
+          artifact-name: jpipe-runner-incremental-old
+          comment: "false"
+
+      - name: Check each run
+        env:
+          CACHE_REPORT: ${{ steps.cache.outputs.report }}
+          FILE_REPORT: ${{ steps.file.outputs.report }}
+          OLD_RESULT: ${{ steps.old.outputs.result }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          # A pull request runs incrementally, from dev's baseline or none; a push in full.
+          if [[ -n "$PULL_REQUEST" ]]; then
+            jq -e '.selection != null' "$CACHE_REPORT"
+          else
+            jq -e '.selection == null' "$CACHE_REPORT"
+          fi
+          jq -e '.selection != null and ([.elements[].reused] | all)' "$FILE_REPORT"
+          [[ "$OLD_RESULT" == "2" ]] || { echo "::error::expected runner 4.4.0 to refuse incremental, got result '$OLD_RESULT'"; exit 1; }
+
   # Two runs in one job, as artifact-name allows: the second stops before writing anything,
   # and must not report the first run's report or diagram as its own.
   two-runs:
+    name: two-runs (${{ matrix.runner }} runner)
+    needs: runners
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: default
+            version: ${{ needs.runners.outputs.default }}
+          - runner: latest
+            version: ${{ needs.runners.outputs.latest }}
     steps:
       - uses: actions/checkout@v7
 
@@ -66,7 +219,8 @@ jobs:
           working-directory: example
           justification: justification.json
           library: steps.py
-          artifact-name: jpipe-runner-first
+          runner-version: ${{ matrix.version }}
+          artifact-name: jpipe-runner-first-${{ matrix.runner }}
           comment: "false"
 
       - name: Second run, on a justification that does not exist
@@ -77,7 +231,8 @@ jobs:
           working-directory: example
           justification: missing.json
           library: steps.py
-          artifact-name: jpipe-runner-second
+          runner-version: ${{ matrix.version }}
+          artifact-name: jpipe-runner-second-${{ matrix.runner }}
           comment: "false"
 
       - name: Check that each run reports its own files
@@ -91,6 +246,52 @@ jobs:
           [[ -n "$SECOND_RESULT" && "$SECOND_RESULT" != "0" ]] || { echo "::error::expected the second run to fail, got result '$SECOND_RESULT'"; exit 1; }
           [[ -z "$SECOND_VERDICT$SECOND_REPORT$SECOND_DIAGRAM" ]] || { echo "::error::the second run reports files it did not write: verdict '$SECOND_VERDICT', report '$SECOND_REPORT', diagram '$SECOND_DIAGRAM'"; exit 1; }
           jq -e '.verdict == "pass"' "$FIRST_REPORT"
+
+  # On a pull request, the action comments, and each later run edits that comment: however
+  # often the pull request is pushed, it keeps one comment of this job's. Not on a pull
+  # request from a fork, whose token cannot comment.
+  comment:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # Two runs at once could each post a comment; the next run would delete one, but this
+    # run's check would count two. A newer run cancels this one: once the head moved, the
+    # action leaves the comment alone, and the check would find none.
+    concurrency:
+      group: comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run the action on the example
+        id: run
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+
+      - name: Check that the pull request has one comment of this job's
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_ID: ${{ steps.run.outputs.comment-id }}
+          PULL_REQUEST: ${{ github.event.pull_request.number }}
+        run: |
+          set -o pipefail
+          [[ -n "$COMMENT_ID" ]] || { echo "::error::the action did not comment"; exit 1; }
+          # The comment's first line is the marker that tells this job's comments apart; a
+          # comment edited on the web has CRLF line ends. Only the action's own count: it
+          # leaves alone a comment someone else wrote with the marker.
+          comment="$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID")"
+          marker="$(jq -r '.body | split("\n")[0] | rtrimstr("\r")' <<< "$comment")"
+          author="$(jq -r '.user.id' <<< "$comment")"
+          count="$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PULL_REQUEST/comments" \
+            | jq -s --arg marker "$marker" --argjson author "$author" \
+                '[.[][] | select(.user.id == $author and (.body | startswith($marker)))] | length')"
+          [[ "$count" == 1 ]] || { echo "::error::$count comments start with $marker, expected 1"; exit 1; }
+          echo "one comment of this job's on the pull request: $COMMENT_ID"
 
   # Inputs reach the runner as literal arguments, never as shell source: the command
   # injection fixed in jpipe-runner 3.5.0 must not come back. The run fails (the files do
@@ -115,11 +316,29 @@ jobs:
             src'; touch INJECTED-python-path; echo '
           comment: "false"
 
+      - name: Run the action with shell syntax in its other inputs
+        id: others
+        continue-on-error: true
+        uses: ./
+        with:
+          working-directory: example
+          justification: justification.json
+          library: steps.py
+          jobs: "2; touch INJECTED-jobs"
+          verbosity: "$(touch INJECTED-verbosity)"
+          incremental: "true"
+          baseline: "base.json'; touch INJECTED-baseline; echo '"
+          diagram-format: "png; touch INJECTED-diagram-format"
+          artifact-name: "jpipe-$(touch INJECTED-artifact-name)"
+          comment: "false"
+
       - name: Check that nothing ran
         env:
           RESULT: ${{ steps.run.outputs.result }}
+          OTHERS: ${{ steps.others.outputs.result }}
         run: |
           [[ -n "$RESULT" && "$RESULT" != "0" ]] || { echo "::error::expected the runner to refuse the inputs, got result '$RESULT'"; exit 1; }
+          [[ "$OTHERS" == "2" ]] || { echo "::error::expected a usage error for the other inputs, got result '$OTHERS'"; exit 1; }
           injected="$(find "$GITHUB_WORKSPACE" "$RUNNER_TEMP" -name 'INJECTED*')"
           [[ -z "$injected" ]] || { echo "::error::a payload ran: $injected"; exit 1; }
           echo "the runner refused the inputs (exit code $RESULT), and no payload ran"

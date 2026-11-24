@@ -20,7 +20,7 @@ inputs:
     required: false
     default: ""
   working-directory:
-    description: "Directory to run jPipe Runner from: the paths the evidence observes are relative to it"
+    description: "Directory to run jPipe Runner from: justification, library and python-path are relative to it. The paths the evidence observes are relative to the step library's file"
     required: false
     default: "."
   strict:
@@ -31,28 +31,40 @@ inputs:
     description: "If true, validate the step libraries against the justification, and call no step"
     required: false
     default: "false"
+  jobs:
+    description: "How many steps to run at a time, when the argument does not order them: a number, or auto for one per CPU; empty for one at a time. The step libraries must be written for it"
+    required: false
+    default: ""
+  incremental:
+    description: "If true, a pull request runs again only what changed since its base branch's last report, and reuses the rest from it; a push runs in full, and saves its report for the pull requests. Needs jPipe Runner 4.5.0 or later"
+    required: false
+    default: "false"
+  baseline:
+    description: "With incremental, the JSON report to run from, on any event, relative to working-directory, instead of the one a push saved; one that does not exist runs everything"
+    required: false
+    default: ""
   diagram-format:
     description: "Format of the diagram drawn of the run: svg, png, pdf, dot, jpg, jpeg or gif; empty for none"
     required: false
     default: "svg"
-  dataflow:
-    description: "If true, also draw the dataflow diagram: the files and variables the steps declare"
+  verbosity:
+    description: "What jPipe Runner logs: quiet (errors only), normal, verbose or debug; empty for normal, or for debug on a re-run with debug logging"
     required: false
-    default: "false"
+    default: ""
   python-executable:
     description: "Python interpreter to run jPipe Runner with, which sees the packages the step libraries import; by default the action sets up Python 3.11"
     required: false
     default: ""
   runner-version:
-    description: "jPipe Runner to install: a release on PyPI (4.0.0), or a git ref of its repository (main, a commit)"
+    description: "jPipe Runner to install: a release on PyPI (4.5.0), or a git ref of its repository (main, a commit)"
     required: false
-    default: "4.0.0"
+    default: "4.5.0"
   artifact-name:
-    description: "Name of the artifact holding the reports and the diagrams; by default jpipe-runner-<job>. Set it to run the action twice in one job"
+    description: "Name of the artifact holding the reports and the diagram; by default jpipe-runner-<job>, and jpipe-runner-<job>-<index> in a matrix. Set it to run the action twice in one job"
     required: false
     default: ""
   comment:
-    description: "If true, post the result as a comment on the pull request (GitHub only)"
+    description: "If true, post the result as a comment on the pull request, and edit that comment on later runs (GitHub only)"
     required: false
     default: "true"
   embed-image:
@@ -89,7 +101,7 @@ outputs:
     description: "jPipe Runner's exit code: 0 holds, 1 fails, 2 usage error, 3 nothing could run, 4 a file could not be read or written"
     value: ${{ steps.run.outputs.result }}
   verdict:
-    description: "The verdict of the run: pass, fail, skip, valid (a dry run) or invalid; empty if there is no report"
+    description: "The verdict of the run: pass, fail, skip, valid (a dry run) or invalid; empty if there is no report, or one whose schema this action does not read"
     value: ${{ steps.run.outputs.verdict }}
   report:
     description: "Path to the JSON report, if one was written"
@@ -97,11 +109,8 @@ outputs:
   diagram:
     description: "Path to the diagram, if one was drawn"
     value: ${{ steps.run.outputs.diagram }}
-  dataflow:
-    description: "Path to the dataflow diagram, if one was drawn"
-    value: ${{ steps.run.outputs.dataflow }}
   comment-id:
-    description: "ID of the pull request comment posted, if one was"
+    description: "ID of the pull request comment posted or edited, if one was"
     value: ${{ steps.post.outputs.comment-id }}
 
 runs:
@@ -110,15 +119,30 @@ runs:
     - name: Install Graphviz
       if: ${{ inputs.diagram-format != '' && inputs.diagram-format != 'dot' }}
       shell: bash
+      env:
+        FORMAT: ${{ inputs.diagram-format }}
       run: |
         # Only the dot program is needed. Most GitHub-hosted images have it already.
-        if command -v dot > /dev/null; then
-          echo "Graphviz is installed: $(dot -V 2>&1)"
-        else
-          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq graphviz > /dev/null
-          echo "Graphviz installed: $(dot -V 2>&1)"
+        packages=()
+        command -v dot > /dev/null || packages+=(graphviz)
+        # The diagram marks each status with a symbol (✔ ✘ ◌ ⚠). An SVG leaves them to the
+        # browser; any other format draws them with a font installed here, and without
+        # one that has them, they come out as empty boxes. The list is read whole: grep
+        # -q stopping early must not make fc-list fail under pipefail.
+        fonts="$(fc-list : family 2> /dev/null || true)"
+        if [[ "$FORMAT" != "svg" ]] && ! grep -qi "DejaVu Sans" <<< "$fonts"; then
+          if command -v apt-get > /dev/null; then
+            packages+=(fonts-dejavu-core)
+          else
+            echo "::warning::No DejaVu Sans font here, and no apt-get to install it: the status symbols of the $FORMAT diagram may show as empty boxes"
+          fi
         fi
+        if (( ${#packages[@]} )); then
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${packages[@]}" > /dev/null
+          echo "Installed: ${packages[*]}"
+        fi
+        echo "Graphviz: $(dot -V 2>&1)"
 
     - name: Set up Python
       id: python
@@ -135,11 +159,44 @@ runs:
       run: ${{ github.action_path }}/scripts/install.sh
 
     # A folder of its own: a second run in the same job (see artifact-name) must neither
-    # report nor upload the files of the first.
+    # report nor upload the files of the first. The artifact's name also tells this run's
+    # comment from another's.
     - name: Make a folder for the run
       id: folder
       shell: bash
-      run: echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")" >> "$GITHUB_OUTPUT"
+      env:
+        # Jobs of one matrix share github.job, and an artifact name is unique in a run:
+        # in a matrix, the default name ends with the job's index in it.
+        ARTIFACT_NAME: ${{ inputs.artifact-name || (strategy.job-total > 1 && format('jpipe-runner-{0}-{1}', github.job, strategy.job-index)) || format('jpipe-runner-{0}', github.job) }}
+      run: |
+        # One line in $GITHUB_OUTPUT: a line break would let the name set other outputs.
+        [[ "$ARTIFACT_NAME" != *$'\n'* ]] || { echo "::error::artifact-name must be one line"; exit 1; }
+        # An incremental run's baseline is cached per workflow file and artifact name, as
+        # the comment is, under a key that ends with the commit, and at a path that is the
+        # same in every run: the cache restores to the path it saved.
+        # The ref follows the first "@refs/": a branch's name may hold an @ of its own.
+        workflow="${GITHUB_WORKFLOW_REF%%@refs/*}"
+        cache_key="jpipe-runner-baseline-${workflow#*/*/}-$ARTIFACT_NAME-"
+        # The cache reads its path as a glob: the file is named by a checksum of the
+        # artifact's name, which may hold [, * or ?.
+        read -r checksum _ < <(printf '%s' "$ARTIFACT_NAME" | cksum)
+        {
+          echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")"
+          echo "artifact-name=$ARTIFACT_NAME"
+          echo "baseline=$RUNNER_TEMP/jpipe-runner-baseline/$checksum.json"
+          echo "cache-key=${cache_key//,/_}"
+        } >> "$GITHUB_OUTPUT"
+
+    # A pull request runs from the newest baseline of its base branch. It cannot write that
+    # branch's cache, so a fork cannot plant one.
+    - name: Restore the baseline of the incremental run
+      id: baseline
+      if: ${{ inputs.incremental == 'true' && inputs.dry-run != 'true' && inputs.baseline == '' && github.event.pull_request }}
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.folder.outputs.baseline }}
+        key: ${{ steps.folder.outputs.cache-key }}${{ github.sha }}
+        restore-keys: ${{ steps.folder.outputs.cache-key }}
 
     - name: Run jPipe Runner
       id: run
@@ -152,19 +209,45 @@ runs:
         JPIPE_PYTHON_PATH: ${{ inputs.python-path }}
         JPIPE_STRICT: ${{ inputs.strict }}
         JPIPE_DRY_RUN: ${{ inputs.dry-run }}
+        JPIPE_JOBS: ${{ inputs.jobs }}
+        # A re-run with debug logging logs the runner's details too, unless the workflow
+        # chose a verbosity.
+        JPIPE_VERBOSITY: ${{ inputs.verbosity || (runner.debug == '1' && 'debug') || 'normal' }}
         JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
-        JPIPE_DATAFLOW: ${{ inputs.dataflow }}
+        # A dry run calls no step, so it reuses none: the runner refuses --incremental.
+        JPIPE_INCREMENTAL: ${{ inputs.incremental == 'true' && inputs.dry-run != 'true' && (inputs.baseline || (github.event.pull_request && steps.folder.outputs.baseline)) || '' }}
         # The pull request's head, for a pull request; the commit that ran, otherwise.
         JPIPE_SUFFIX: ${{ github.event.pull_request.head.sha || github.sha }}
         JPIPE_OUTPUT_DIR: ${{ steps.folder.outputs.path }}
       run: JPIPE_OUTPUTS="$GITHUB_OUTPUT" "${{ github.action_path }}/scripts/run.sh"
 
-    - name: Upload the reports and the diagrams
+    # A push runs in full, so that the branch is always checked whole, and saves its report
+    # as the baseline of the pull requests into the branch. A pull request saves none: its
+    # later runs are judged against the base branch, not against themselves.
+    - name: Keep the report as the next baseline
+      id: next-baseline
+      # A dry run calls no step, so its report is no baseline: the runner would run every
+      # element again from it.
+      if: ${{ always() && inputs.incremental == 'true' && inputs.baseline == '' && inputs.dry-run != 'true' && github.event_name == 'push' && steps.run.outputs.report != '' }}
+      shell: bash
+      env:
+        REPORT: ${{ steps.run.outputs.report }}
+        BASELINE: ${{ steps.folder.outputs.baseline }}
+      run: mkdir -p "$(dirname "$BASELINE")" && cp "$REPORT" "$BASELINE"
+
+    - name: Save the next baseline
+      if: ${{ always() && steps.next-baseline.outcome == 'success' }}
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.folder.outputs.baseline }}
+        key: ${{ steps.folder.outputs.cache-key }}${{ github.sha }}
+
+    - name: Upload the reports and the diagram
       id: upload
       if: ${{ always() && steps.run.outputs.text != '' }}
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ inputs.artifact-name || format('jpipe-runner-{0}', github.job) }}
+        name: ${{ steps.folder.outputs.artifact-name }}
         path: ${{ steps.folder.outputs.path }}
 
     - name: Commit the diagram
@@ -194,17 +277,37 @@ runs:
       env:
         JPIPE_PYTHON: ${{ inputs.python-executable || steps.python.outputs.python-path }}
         RESULT: ${{ steps.run.outputs.result }}
+        VERDICT: ${{ steps.run.outputs.verdict }}
         REPORT: ${{ steps.run.outputs.report }}
         TEXT: ${{ steps.run.outputs.text }}
         LOG: ${{ steps.run.outputs.log }}
         IMAGE_URL: ${{ steps.image.outputs.url }}
         ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+        COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        BASELINE: ${{ inputs.baseline }}
+        BASELINE_KEY: ${{ steps.baseline.outputs.cache-matched-key }}
+        CACHE_KEY: ${{ steps.folder.outputs.cache-key }}
         # Next to the run's folder, not in it: the comment is not part of the artifact.
         COMMENT: ${{ steps.folder.outputs.path }}-comment.md
       run: |
+        # The baseline, for people: the commit whose report was restored, or the file given.
+        if [[ -n "$BASELINE" ]]; then
+          baseline="\`$BASELINE\`"
+        elif [[ -n "$BASELINE_KEY" ]]; then
+          commit="${BASELINE_KEY#"$CACHE_KEY"}"
+          baseline="the report of commit \`${commit:0:12}\`"
+        else
+          baseline=""
+        fi
         "$JPIPE_PYTHON" "${{ github.action_path }}/scripts/comment.py" \
           --result "$RESULT" --report "$REPORT" --text "$TEXT" --log "$LOG" \
-          --image-url "$IMAGE_URL" --artifact-url "$ARTIFACT_URL" > "$COMMENT"
+          --image-url "$IMAGE_URL" --artifact-url "$ARTIFACT_URL" \
+          --commit "$COMMIT" --run-url "$RUN_URL" --baseline "$baseline" > "$COMMENT"
+        # A report without a verdict could not be read: run.sh's log says why.
+        if [[ -n "$REPORT" && -z "$VERDICT" ]]; then
+          echo "::warning::jpipe-runner wrote a report that the action could not read: see the log of the step that ran it"
+        fi
         cat "$COMMENT" >> "$GITHUB_STEP_SUMMARY"
         echo "path=$COMMENT" >> "$GITHUB_OUTPUT"
 
@@ -214,17 +317,54 @@ runs:
       uses: actions/github-script@v9
       env:
         COMMENT: ${{ steps.comment.outputs.path }}
+        ARTIFACT_NAME: ${{ steps.folder.outputs.artifact-name }}
       with:
         github-token: ${{ inputs.github-token }}
         script: |
-          const body = require("fs").readFileSync(process.env.COMMENT, "utf8");
+          // One comment per workflow and artifact name, edited by each later run: the
+          // marker that starts it finds it. The workflow is its file, which two workflows
+          // cannot share, as they can share a job's name. Encoded, so that no value ends
+          // the HTML comment, and no marker starts another.
+          // The ref follows the first "@refs/": a branch's name may hold an @ of its own.
+          const workflow = process.env.GITHUB_WORKFLOW_REF.replace(/@refs\/.*$/, "");
+          const marker = `<!-- jpipe-ci-actions ${encodeURIComponent(workflow)} ${encodeURIComponent(process.env.ARTIFACT_NAME)} -->`;
+          const body = `${marker}\n${require("fs").readFileSync(process.env.COMMENT, "utf8")}`;
+          const issue = { ...context.repo, issue_number: context.issue.number };
           try {
-            const { data } = await github.rest.issues.createComment({
-              ...context.repo,
-              issue_number: context.issue.number,
-              body,
-            });
+            // Runs of successive pushes can end out of order: a run whose commit is no
+            // longer the pull request's head leaves the comment to the run of the head.
+            const { data: pull } = await github.rest.pulls.get({ ...context.repo, pull_number: context.issue.number });
+            if (pull.head.sha !== context.payload.pull_request.head.sha) {
+              core.info(`Not commenting: the pull request's head is now ${pull.head.sha}, whose run reports it`);
+              return;
+            }
+            // Only a comment of the token's own identity is edited, never one that
+            // someone else wrote with the marker; by id, as a bot's login and its
+            // owner's may differ by [bot] alone. A token that cannot say who it is
+            // posts a new comment, as it did before.
+            const self = await github.graphql("query { viewer { databaseId } }").then(
+              ({ viewer }) => viewer.databaseId,
+              (error) => core.warning(`Posting a new comment: the token's identity is unknown (${error.message})`),
+            );
+            const comments = self
+              ? await github.paginate(github.rest.issues.listComments, { ...issue, per_page: 100 })
+              : [];
+            const [earlier, ...extra] = comments.filter(
+              (comment) => comment.user?.id === self && comment.body?.startsWith(marker),
+            );
+            const { data } = earlier
+              ? await github.rest.issues.updateComment({ ...context.repo, comment_id: earlier.id, body })
+              : await github.rest.issues.createComment({ ...issue, body });
+            core.info(`${earlier ? "Edited" : "Posted"} ${data.html_url}`);
             core.setOutput("comment-id", String(data.id));
+            // Two runs at once can each find no comment, and each post one: the oldest
+            // is kept, and the others go, so the pull request is back to one.
+            for (const comment of extra) {
+              await github.rest.issues.deleteComment({ ...context.repo, comment_id: comment.id }).then(
+                () => core.info(`Deleted ${comment.html_url}, a second comment of this workflow and artifact name`),
+                (error) => core.warning(`Could not delete ${comment.html_url}: ${error.message}`),
+              );
+            }
           } catch (error) {
             // A token without pull-requests: write, or a pull request from a fork: the
             // run is reported in the job summary anyway.

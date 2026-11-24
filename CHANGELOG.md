@@ -8,6 +8,88 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-24
+
+### Added
+- **`incremental` runs a pull request again only where it changed** (jPipe Runner's
+  `--incremental`, 4.5.0 or later). A push runs in full, and saves its report in the
+  GitHub Actions cache; a pull request starts from its base branch's last report (or the
+  default branch's, until the base branch has one), runs again what changed since, and
+  reuses the rest, with the whole argument's verdict. The comment says what ran again,
+  and why. `baseline` names a report to start from instead, on any event. With an older
+  runner, an incremental run (a pull request's, or any run with `baseline`) stops with a
+  usage error, exit code 2. An incremental run is only as sound as the step libraries'
+  declarations (#16).
+- **`jobs` runs independent steps together**: up to that many at a time, or one per CPU
+  with `auto`, when the argument does not order them (jPipe Runner's `--jobs`, 4.4.0 or
+  later). Empty by default: one step at a time. The step libraries must be written for it
+  (#13).
+- **`verbosity` sets what jPipe Runner logs**: `quiet`, `normal` (the default, when
+  empty), `verbose` or `debug`. The log, in the comment and the artifact, then says which
+  Python ran the steps, the libraries a glob matched and `sys.path`, which a library that
+  cannot be imported (`JP020`) needs. A re-run with debug logging turned on uses `debug`,
+  unless the workflow set a verbosity. Another value is a usage error, exit code 2 (#9).
+
+### Changed
+- **⚠️ Breaking: the action installs jPipe Runner 4.5.0 by default**, where it installed
+  4.0.0. `runner-version: 4.0.0` keeps the old one. The runner's breaking changes since
+  4.0.0 reach workflows that leave `runner-version` unset (README, *Upgrading from 1.x*):
+  - the paths an evidence observes are relative to the step library's file, no longer to
+    `working-directory`: a library outside it fails with `JP019` until its paths are
+    rewritten (4.1.0);
+  - a composed model compiled by jPipe older than 4.0.0 stops with `JP016`, and must be
+    compiled again (4.3.0);
+  - `JP027` is a new warning, which `strict: true` counts as an error (4.3.0).
+
+  From now on the default follows the runner's semantic version: a minor or patch release
+  of the runner moves it in a minor or patch release of the action, and a major one in a
+  major release ([ADR-0003](docs/adr/0003-the-default-runner-follows-semver.md), #11).
+- **The pull request keeps one comment per workflow and artifact name.** Each run added
+  a new comment, and a pull request pushed ten times collected ten reports. A run now
+  edits the comment the action wrote before, found by a hidden marker on its first line,
+  and `comment-id` is that comment's id; GitHub keeps the earlier reports in the
+  comment's edit history. The comment, and the job summary, end with the commit and the
+  run they report, and a run whose commit is no longer the pull request's head leaves
+  the comment alone. Comments written by earlier releases have no marker: the first run
+  after upgrading adds one more comment, which later runs edit (#10).
+
+### Fixed
+- **A PNG, PDF, JPEG or GIF diagram shows its status symbols** (✔ ✘ ◌ ⚠), which jPipe
+  Runner draws since 4.1.0. Graphviz draws them with a font installed on the machine, and
+  without one that has them they came out as empty boxes: for a format other than `svg`,
+  the action now installs DejaVu Sans when it is missing, where `apt-get` can, and warns
+  elsewhere (#14).
+- **A report the action cannot read no longer costs the comment.** The action reads the
+  JSON report of schema versions 1.x and 2.x, those of jPipe Runner 4.0 to 4.5. A report
+  of another version, from a future runner, or one that is not JSON, crashed the comment
+  step: the pull request got no comment, and the job no summary. The comment now gives
+  the exit code, says that the action cannot read the report, and shows the text report
+  and the log; the job gets a warning, and `verdict` is empty (#8).
+- **The action runs in a matrix without `artifact-name`.** Every job of a matrix took
+  the default artifact name, `jpipe-runner-<job>`, and an artifact name must be unique
+  in a run, so every job after the first failed to upload its reports. In a matrix, the
+  default name now ends with the job's index in it: `jpipe-runner-<job>-<index>`. A job
+  outside a matrix keeps its name. **A matrix job that uploaded alone**, its action step
+  skipped in the other jobs, **is renamed** too: a later job that downloads
+  `jpipe-runner-<job>` must set `artifact-name`. So must a reusable workflow called from
+  a matrix, which sees only its own job (#22).
+- **`runner-version` installs post and dev releases from PyPI**, such as `4.4.0.post1`
+  or `4.5.0.dev1`. It took them for git refs of jpipe-runner's repository, which do not
+  exist, and the installation failed.
+
+### Removed
+- **⚠️ Breaking: the `dataflow` input and output.** jPipe Runner 4.1.0 removed
+  `--dataflow`: it draws one diagram, the dataflow, and `--diagram` draws it. With
+  `runner-version` set to 4.1.0 or later, `dataflow: true` made the runner refuse its
+  command line (exit code 2), and the job failed without a report. With runner 4.1.0 or
+  later, the `diagram` output is the dataflow; with 4.0.0, it is the argument alone, and
+  the dataflow is no longer drawn. A workflow that still sets `dataflow` gets GitHub's
+  "unexpected input" warning, and one that reads `outputs.dataflow` gets nothing (#6,
+  #12).
+
+### Not yet
+- The GitLab CI/CD component is still a scaffold: none of the above reaches it yet.
+
 ## [1.0.0] - 2026-11-11
 
 ### Added
