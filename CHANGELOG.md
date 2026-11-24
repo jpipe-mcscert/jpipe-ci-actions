@@ -13,11 +13,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with `auto`, when the argument does not order them (jPipe Runner's `--jobs`, 4.4.0 or
   later). Empty by default: one step at a time. The step libraries must be written for it
   (#13).
-- **`verbosity` sets what jPipe Runner logs**: `quiet`, `normal` (the default), `verbose`
-  or `debug`. The log, in the comment and the artifact, then says which Python ran the
+- **`verbosity` sets what jPipe Runner logs**: `quiet`, `normal` (the default, when
+  empty), `verbose` or `debug`. The log, in the comment and the artifact, then says which Python ran the
   steps, the libraries a glob matched and `sys.path`, which a library that cannot be
   imported (`JP020`) needs. A re-run with debug logging turned on uses `debug`, unless the
-  workflow set a verbosity (#9).
+  workflow set a verbosity. Another value is a usage error, exit code 2 (#9).
 
 ### Changed
 - **⚠️ Breaking: the action installs jPipe Runner 4.5.0 by default**, where it installed
@@ -46,7 +46,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A PNG, PDF, JPEG or GIF diagram shows its status symbols** (✔ ✘ ◌ ⚠), which jPipe
   Runner draws since 4.1.0. Graphviz draws them with a font installed on the machine, and
   without one that has them they came out as empty boxes: for a format other than `svg`,
-  the action now installs DejaVu Sans when it is missing (#14).
+  the action now installs DejaVu Sans when it is missing, where `apt-get` can, and warns
+  elsewhere (#14).
 - **A report the action cannot read no longer costs the comment.** The action reads the
   JSON report of schema versions 1.x and 2.x, those of jPipe Runner 4.0 to 4.5. A report
   of another version, from a future runner, or one that is not JSON, crashed the comment

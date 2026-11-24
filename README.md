@@ -85,8 +85,8 @@ include:
 | `strict` | `false` | Count validation warnings as errors, and fail a skipped justification. |
 | `dry-run` | `false` | Validate the step libraries against the justification, and call no step. |
 | `jobs` | | How many steps to run at a time when the argument does not order them: a number, or `auto` for one per CPU; empty for one at a time. The step libraries must be written for it ([steps that run together](https://github.com/jpipe-mcscert/jpipe-runner/blob/main/docs/authoring.md#steps-that-run-together)): a step that writes a file another evidence observes can fail with `JP019`, now and then. Needs jPipe Runner 4.4.0 or later. |
-| `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. For a format other than `svg`, the action installs DejaVu Sans if it is missing, for the status symbols. |
-| `verbosity` | `normal` | What jPipe Runner logs: `quiet` (errors only), `normal` (warnings and errors), `verbose` (what the run does, such as the Python that runs the steps) or `debug` (details, such as the libraries a glob matched and `sys.path`). A re-run with debug logging turned on uses `debug`, unless the workflow set a verbosity. |
+| `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. For a format other than `svg`, the action installs DejaVu Sans if it is missing, for the status symbols (with `apt-get`; elsewhere it warns). |
+| `verbosity` | | What jPipe Runner logs: `quiet` (errors only), `normal` (warnings and errors), `verbose` (what the run does, such as the Python that runs the steps) or `debug` (details, such as the libraries a glob matched and `sys.path`). Empty is `normal`, or `debug` on a re-run with debug logging turned on. |
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11. |
 | `runner-version` | `4.5.0` | jPipe Runner to install: a release on PyPI (`4.5.0`), or a git ref of its repository. |
 | `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. In a matrix, the default is `jpipe-runner-<job>-<index>`, the job's index in the matrix; name it after a matrix value instead (`jpipe-${{ matrix.os }}`) to tell the artifacts apart, and to keep each job's comment on the pull request when the matrix changes. Set it in a reusable workflow called from a matrix, which sees only its own job. |
@@ -129,10 +129,11 @@ since 4.0.0 ([CHANGELOG](https://github.com/jpipe-mcscert/jpipe-runner/blob/main
   the runner stops with `JP016`.
 - **`JP027` is a new warning** (4.3.0): a step that never reads a value it consumes, or an
   artifact it observes. With `strict: true`, a library that ran may now fail.
-- **The `dataflow` input and output are gone.** The runner draws one diagram, the
-  dataflow, and the `diagram` output is its path.
 
-Two changes concern workflows, whatever the runner:
+Three changes concern workflows, whatever the runner:
+
+- **The `dataflow` input and output are gone.** With runner 4.1.0 or later, the runner
+  draws one diagram, the dataflow, and the `diagram` output is its path.
 
 - **In a matrix, the default artifact name ends with the job's index**,
   `jpipe-runner-<job>-<index>`. A job that downloads `jpipe-runner-<job>` must set

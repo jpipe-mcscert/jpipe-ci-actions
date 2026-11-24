@@ -40,9 +40,9 @@ inputs:
     required: false
     default: "svg"
   verbosity:
-    description: "What jPipe Runner logs: quiet (errors only), normal, verbose or debug; debug when a re-run turns on debug logging and this is normal"
+    description: "What jPipe Runner logs: quiet (errors only), normal, verbose or debug; empty for normal, or for debug on a re-run with debug logging"
     required: false
-    default: "normal"
+    default: ""
   python-executable:
     description: "Python interpreter to run jPipe Runner with, which sees the packages the step libraries import; by default the action sets up Python 3.11"
     required: false
@@ -119,9 +119,15 @@ runs:
         command -v dot > /dev/null || packages+=(graphviz)
         # The diagram marks each status with a symbol (✔ ✘ ◌ ⚠). An SVG leaves them to the
         # browser; any other format draws them with a font installed here, and without
-        # one that has them, they come out as empty boxes.
-        if [[ "$FORMAT" != "svg" ]] && ! fc-list 2> /dev/null | grep -qi "DejaVu Sans"; then
-          packages+=(fonts-dejavu-core)
+        # one that has them, they come out as empty boxes. The list is read whole: grep
+        # -q stopping early must not make fc-list fail under pipefail.
+        fonts="$(fc-list : family 2> /dev/null || true)"
+        if [[ "$FORMAT" != "svg" ]] && ! grep -qi "DejaVu Sans" <<< "$fonts"; then
+          if command -v apt-get > /dev/null; then
+            packages+=(fonts-dejavu-core)
+          else
+            echo "::warning::No DejaVu Sans font here, and no apt-get to install it: the status symbols of the $FORMAT diagram may show as empty boxes"
+          fi
         fi
         if (( ${#packages[@]} )); then
           sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
@@ -173,7 +179,7 @@ runs:
         JPIPE_JOBS: ${{ inputs.jobs }}
         # A re-run with debug logging logs the runner's details too, unless the workflow
         # chose a verbosity.
-        JPIPE_VERBOSITY: ${{ runner.debug == '1' && inputs.verbosity == 'normal' && 'debug' || inputs.verbosity }}
+        JPIPE_VERBOSITY: ${{ inputs.verbosity || (runner.debug == '1' && 'debug') || 'normal' }}
         JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
         # The pull request's head, for a pull request; the commit that ran, otherwise.
         JPIPE_SUFFIX: ${{ github.event.pull_request.head.sha || github.sha }}
