@@ -128,10 +128,12 @@ The action keeps the baseline in the GitHub Actions cache, one per workflow file
 artifact name:
 
 - **On a push**, the run is a full one, so that the branch is always checked whole, and
-  its report is saved as the baseline of the pull requests into that branch.
-- **On a pull request**, the run starts from the last baseline of the base branch, and
-  saves nothing: a pull request cannot write its base branch's cache, so a fork cannot
-  plant a baseline. Until the base branch has one, the run is a full one.
+  its report is saved as the baseline of the pull requests into that branch, unless it is
+  a dry run, which calls no step.
+- **On a pull request**, the run starts from the last baseline of the base branch, or, if
+  it has none yet, of the repository's default branch, and saves nothing: a pull request
+  cannot write those branches' caches, so a fork cannot plant a baseline. With neither,
+  the run is a full one.
 - **On another event**, such as a schedule, the run is a full one, and saves nothing.
 
 To keep the baseline elsewhere, such as an artifact downloaded from another run, give its

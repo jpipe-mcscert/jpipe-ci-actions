@@ -116,8 +116,11 @@ def _selection(report: dict[str, Any], baseline: str) -> str:
     if not rerun:
         return f"Incremental run: nothing changed since {baseline}, every element reused."
     if not any(element.get("reused") for element in report["elements"]):
-        if set(rerun.values()) == {"there is no baseline"}:
+        reasons = set(rerun.values())
+        if reasons == {"there is no baseline"}:
             return "Incremental run without a baseline: every element ran."
+        if len(reasons) == 1:  # such as the baseline's model, or no baseline at all
+            return f"Incremental run: every element ran again ({reasons.pop()})."
         head = f"Incremental run: every element ran again since {baseline}."
     else:
         total = report["summary"]["elements"]

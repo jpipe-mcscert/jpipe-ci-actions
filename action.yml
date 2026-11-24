@@ -174,7 +174,8 @@ runs:
         # An incremental run's baseline is cached per workflow file and artifact name, as
         # the comment is, under a key that ends with the commit, and at a path that is the
         # same in every run: the cache restores to the path it saved.
-        workflow="${GITHUB_WORKFLOW_REF%@*}"
+        # The ref follows the first "@refs/": a branch's name may hold an @ of its own.
+        workflow="${GITHUB_WORKFLOW_REF%%@refs/*}"
         cache_key="jpipe-runner-baseline-${workflow#*/*/}-$ARTIFACT_NAME-"
         {
           echo "path=$(mktemp -d "$RUNNER_TEMP/jpipe-runner-XXXXXX")"
@@ -221,7 +222,9 @@ runs:
     # later runs are judged against the base branch, not against themselves.
     - name: Keep the report as the next baseline
       id: next-baseline
-      if: ${{ always() && inputs.incremental == 'true' && inputs.baseline == '' && github.event_name == 'push' && steps.run.outputs.report != '' }}
+      # A dry run calls no step, so its report is no baseline: the runner would run every
+      # element again from it.
+      if: ${{ always() && inputs.incremental == 'true' && inputs.baseline == '' && inputs.dry-run != 'true' && github.event_name == 'push' && steps.run.outputs.report != '' }}
       shell: bash
       env:
         REPORT: ${{ steps.run.outputs.report }}

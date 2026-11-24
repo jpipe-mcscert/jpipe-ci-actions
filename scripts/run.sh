@@ -69,7 +69,7 @@ if [[ -n "${JPIPE_INCREMENTAL:-}" ]]; then
   if grep -q -- "--incremental" <<< "$help"; then
     command+=(--incremental "$JPIPE_INCREMENTAL")
   else
-    usage="error: incremental needs jpipe-runner 4.5.0 or later, not $("$python" -m jpipe_runner --version 2>&1)"
+    usage+="${usage:+$'\n'}error: incremental needs jpipe-runner 4.5.0 or later, not $("$python" -m jpipe_runner --version 2>&1)"
   fi
 fi
 if [[ -n "$format" ]]; then
