@@ -1,10 +1,11 @@
 """Write the Markdown that reports a run, from the JSON report jpipe-runner wrote.
 
     python comment.py --result 1 --report report.json --text report.txt --log log.txt \
-        [--image-url URL] [--artifact-url URL] [--commit SHA] [--run-url URL] > comment.md
+        [--image-url URL] [--artifact-url URL] [--commit SHA] [--run-url URL] \
+        [--baseline TEXT] > comment.md
 
-The comment says what the run concluded (the verdict), how many elements ended how, the
-elements that did not pass and why, and every diagnostic with its fix; then the diagram,
+The comment says what the run concluded (the verdict), how many elements ended how, what
+an incremental run ran again and why, the elements that did not pass and why, and every diagnostic with its fix; then the diagram,
 the text report and the log, folded, and the commit and the run it reports. A comment that
 later runs edit must say which run it shows. It reads the JSON report, the runner's contract
 for programs, rather than its text output, whose layout may change. When there is no
@@ -25,9 +26,11 @@ import report as reports
 # GitHub refuses a comment longer than 65,536 characters, and the pull request then gets
 # no report. Every part that grows with the model or the run has its own share, so that
 # together they stay under it, with room left for the headline, the summary and the links:
-# the elements that did not pass and the diagnostics are listed up to 15,000 characters
-# each, and the folded text report and log are cut at 12,000 each.
-_LISTED_LIMIT = 15_000
+# the elements that did not pass and the diagnostics are listed up to 12,000 characters
+# each, what an incremental run ran again up to 8,000, and the folded text report and log
+# are cut at 12,000 each.
+_LISTED_LIMIT = 12_000
+_SELECTION_LIMIT = 8_000
 _FOLDED_LIMIT = 12_000
 
 _HEADLINES = {
@@ -50,14 +53,17 @@ def render(
     unreadable: str = "",
     commit: str = "",
     run_url: str = "",
+    baseline: str = "",
 ) -> str:
     """The comment for a run that exited with ``result`` and wrote ``report``, if any.
 
-    ``unreadable`` says why a report that was written could not be read.
+    ``unreadable`` says why a report that was written could not be read, and ``baseline``
+    names the baseline of an incremental run for people, such as a commit.
     """
     parts = [_headline(result, report, unreadable)]
     if report is not None:
         parts.append(_summary(report))
+        parts.append(_selection(report, baseline or "the baseline"))
         parts.extend(section for section in (_stopped(report), _diagnostics(report)) if section)
     parts.append(_diagram(result, image_url, artifact_url))
     parts.append(_folded("Text report", text))
@@ -101,6 +107,35 @@ def _summary(report: dict[str, Any]) -> str:
     return line + "."
 
 
+def _selection(report: dict[str, Any], baseline: str) -> str:
+    """What an incremental run ran again, and why; nothing for a full run."""
+    selection = report.get("selection")
+    if not selection:
+        return ""
+    rerun = selection["rerun"]
+    if not rerun:
+        return f"Incremental run: nothing changed since {baseline}, every element reused."
+    if not any(element.get("reused") for element in report["elements"]):
+        if set(rerun.values()) == {"there is no baseline"}:
+            return "Incremental run without a baseline: every element ran."
+        head = f"Incremental run: every element ran again since {baseline}."
+    else:
+        total = report["summary"]["elements"]
+        head = (
+            f"Incremental run: {len(rerun)} of {total} elements ran again, "
+            f"the rest reused from {baseline}."
+        )
+    labels = {element["id"]: element["label"] for element in report["elements"]}
+    rows = [
+        f"| {_cell(labels.get(element, ''))} | `{element}` | {_cell(why)} |"
+        for element, why in rerun.items()
+    ]
+    rows, more = _bounded(rows, "element", _SELECTION_LIMIT)
+    table = "\n".join(["| Element | Id | Why it ran again |", "|---|---|---|", *rows])
+    body = f"{table}\n\n{more}" if more else table
+    return f"{head}\n\n<details><summary>What ran again</summary>\n\n{body}\n\n</details>"
+
+
 def _counted(count: int, noun: str) -> str:
     return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
@@ -132,12 +167,12 @@ def _diagnostics(report: dict[str, Any]) -> str:
     return "\n".join([*items, *([f"\n{more}"] if more else [])])
 
 
-def _bounded(items: list[str], noun: str) -> tuple[list[str], str]:
-    """The first ``items`` that fit in ``_LISTED_LIMIT``, and a line saying what was left out."""
+def _bounded(items: list[str], noun: str, limit: int = _LISTED_LIMIT) -> tuple[list[str], str]:
+    """The first ``items`` that fit in ``limit``, and a line saying what was left out."""
     size = 0
     for kept, item in enumerate(items):
         size += len(item) + 1
-        if size > _LISTED_LIMIT:
+        if size > limit:
             left = _counted(len(items) - kept, noun)
             return items[:kept], f"… {left} not shown: see the JSON report in the artifact."
     return items, ""
@@ -190,6 +225,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifact-url", default="", help="a URL the diagram can be downloaded from")
     parser.add_argument("--commit", default="", help="the commit the run checked")
     parser.add_argument("--run-url", default="", help="a URL of the CI run")
+    parser.add_argument("--baseline", default="", help="the baseline of an incremental run, for people")
     options = parser.parse_args(argv)
     try:
         report, unreadable = reports.load(options.report), ""
@@ -205,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
             artifact_url=options.artifact_url,
             commit=options.commit,
             run_url=options.run_url,
+            baseline=options.baseline,
             unreadable=unreadable,
         )
     )
