@@ -136,6 +136,9 @@ artifact name:
   the run is a full one.
 - **On another event**, such as a schedule, the run is a full one, and saves nothing.
 
+A dry run calls no step, so `incremental` leaves it as it is: it neither starts from a
+baseline nor saves one.
+
 To keep the baseline elsewhere, such as an artifact downloaded from another run, give its
 path as `baseline`: the run starts from it on any event, and the action neither restores
 nor saves one.

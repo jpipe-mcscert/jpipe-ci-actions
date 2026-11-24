@@ -191,7 +191,7 @@ runs:
     # branch's cache, so a fork cannot plant one.
     - name: Restore the baseline of the incremental run
       id: baseline
-      if: ${{ inputs.incremental == 'true' && inputs.baseline == '' && github.event.pull_request }}
+      if: ${{ inputs.incremental == 'true' && inputs.dry-run != 'true' && inputs.baseline == '' && github.event.pull_request }}
       uses: actions/cache/restore@v6
       with:
         path: ${{ steps.folder.outputs.baseline }}
@@ -214,7 +214,8 @@ runs:
         # chose a verbosity.
         JPIPE_VERBOSITY: ${{ inputs.verbosity || (runner.debug == '1' && 'debug') || 'normal' }}
         JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
-        JPIPE_INCREMENTAL: ${{ inputs.incremental == 'true' && (inputs.baseline || (github.event.pull_request && steps.folder.outputs.baseline)) || '' }}
+        # A dry run calls no step, so it reuses none: the runner refuses --incremental.
+        JPIPE_INCREMENTAL: ${{ inputs.incremental == 'true' && inputs.dry-run != 'true' && (inputs.baseline || (github.event.pull_request && steps.folder.outputs.baseline)) || '' }}
         # The pull request's head, for a pull request; the commit that ran, otherwise.
         JPIPE_SUFFIX: ${{ github.event.pull_request.head.sha || github.sha }}
         JPIPE_OUTPUT_DIR: ${{ steps.folder.outputs.path }}
@@ -324,7 +325,8 @@ runs:
           // marker that starts it finds it. The workflow is its file, which two workflows
           // cannot share, as they can share a job's name. Encoded, so that no value ends
           // the HTML comment, and no marker starts another.
-          const workflow = process.env.GITHUB_WORKFLOW_REF.replace(/@[^@]*$/, "");
+          // The ref follows the first "@refs/": a branch's name may hold an @ of its own.
+          const workflow = process.env.GITHUB_WORKFLOW_REF.replace(/@refs\/.*$/, "");
           const marker = `<!-- jpipe-ci-actions ${encodeURIComponent(workflow)} ${encodeURIComponent(process.env.ARTIFACT_NAME)} -->`;
           const body = `${marker}\n${require("fs").readFileSync(process.env.COMMENT, "utf8")}`;
           const issue = { ...context.repo, issue_number: context.issue.number };
