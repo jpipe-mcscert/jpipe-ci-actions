@@ -19,9 +19,10 @@
 #   JPIPE_OUTPUT_DIR      Directory the report, the logs and the diagram are written to
 #   JPIPE_OUTPUTS         File that receives the outputs, one `key=value` per line
 #
-# Outputs: result (the runner's exit code), verdict, report, text, log, diagram. The
-# verdict is empty when the report's schema is one this action does not read (report.py).
-# The paths are absolute; one the run did not write is left empty.
+# Outputs: result (the runner's exit code), verdict, report, text, log, diagram, junit
+# (junit.py's JUnit XML report of the run, written whether the run wrote a report or not).
+# The verdict is empty when the report's schema is one this action does not read
+# (report.py). The paths are absolute; one that was not written is left empty.
 #
 # The command is an array: every value reaches jpipe-runner as one literal argument, and
 # is never parsed by the shell (no eval). Platform-neutral (docs/adr/0001).
@@ -38,6 +39,7 @@ output_dir="$(cd "$output_dir" && pwd)"
 report="$output_dir/report.json"
 text="$output_dir/report.txt"
 log="$output_dir/log.txt"
+junit="$output_dir/junit.xml"
 
 name="$(basename "$justification")"
 name="${name%.*}${JPIPE_SUFFIX:+-$JPIPE_SUFFIX}"
@@ -79,7 +81,7 @@ fi
 command+=(--report "$report" --colour never "$justification")
 
 # A file left by an earlier run in the same folder would be reported as this run's.
-rm -f -- "$report" "$text" "$log" ${diagram:+"$diagram"}
+rm -f -- "$report" "$text" "$log" "$junit" ${diagram:+"$diagram"}
 
 if [[ -n "$usage" ]]; then
   : > "$text"
@@ -103,7 +105,10 @@ existing() {
   if [[ -n "$1" && -f "$1" ]]; then printf '%s' "$1"; fi
 }
 # Empty, with a warning, for a report whose schema this action does not read.
-verdict="$("$python" "$(dirname "${BASH_SOURCE[0]}")/report.py" verdict "$report")"
+scripts="$(dirname "${BASH_SOURCE[0]}")"
+verdict="$("$python" "$scripts/report.py" verdict "$report")"
+"$python" "$scripts/junit.py" "$report" "$junit" --result "$result" \
+  || echo "warning: the JUnit report could not be written" >&2
 
 {
   echo "result=$result"
@@ -112,6 +117,7 @@ verdict="$("$python" "$(dirname "${BASH_SOURCE[0]}")/report.py" verdict "$report
   echo "text=$text"
   echo "log=$log"
   echo "diagram=$(existing "$diagram")"
+  echo "junit=$(existing "$junit")"
 } >> "$outputs"
 
 # The runner's exit code is an output, not this script's: the front end reports the run

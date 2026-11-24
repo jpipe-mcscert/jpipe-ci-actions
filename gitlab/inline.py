@@ -11,9 +11,11 @@ and never by hand: scripts/ stays where the logic lives.
 
 Each file is a quoted here-document, which the shell copies as it is: nothing in it is
 expanded. GitLab interpolates ``$[[`` everywhere in the template, so a file holding it is
-refused, as is one holding the here-document's delimiter on a line of its own.
+refused, as is one holding the here-document's delimiter on a line of its own, or a
+character YAML cannot hold.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -23,6 +25,8 @@ TEMPLATE = ROOT / "templates" / "jpipe-runner.yml"
 BEGIN = "# >>> scripts/: written by gitlab/inline.py, do not edit"
 END = "# <<< scripts/"
 DELIMITER = "JPIPE_SCRIPT_END"
+# What YAML cannot hold in a block scalar: write such a character as an escape instead.
+UNPRINTABLE = re.compile("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f-\\x84\\x86-\\x9f\\ufffe\\uffff]")
 
 
 def files() -> list[Path]:
@@ -40,6 +44,8 @@ def block() -> list[str]:
         name = path.relative_to(ROOT)
         if "$[[" in text:
             raise SystemExit(f"{name}: holds $[[, which GitLab would interpolate")
+        if (character := UNPRINTABLE.search(text)) is not None:
+            raise SystemExit(f"{name}: holds {character.group()!r}, which YAML cannot hold")
         if DELIMITER in text.splitlines():
             raise SystemExit(f"{name}: holds {DELIMITER} on a line of its own")
         lines.append(f"cat > \"$JPIPE_SCRIPTS/{path.name}\" <<'{DELIMITER}'")

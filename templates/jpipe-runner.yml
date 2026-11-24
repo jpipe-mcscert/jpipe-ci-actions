@@ -467,6 +467,127 @@ spec:
       "$python" -m pip install -q -q --disable-pip-version-check --no-input "$requirement"
       "$python" -m jpipe_runner --version
       JPIPE_SCRIPT_END
+      cat > "$JPIPE_SCRIPTS/junit.py" <<'JPIPE_SCRIPT_END'
+      """Write a JUnit XML report of a run, for test report widgets.
+
+          python junit.py REPORT JUNIT --result CODE
+
+      reads jpipe-runner's JSON report and writes JUNIT: one test case per element of the
+      justification, which fails or is skipped with its reason and its diagnostics, and one for
+      validation, which errors when nothing could run. Without a report this action reads, it
+      writes one test case that errors with the runner's exit code, CODE, so that a widget does
+      not show a run that went wrong as an empty one.
+
+      GitLab shows the file in the merge request (`artifacts:reports:junit`); on GitHub, a test
+      report action can read it. Platform-neutral, standard library only (docs/adr/0001).
+      """
+
+      import argparse
+      import re
+      import sys
+      import xml.etree.ElementTree as ET
+      from typing import Any
+
+      import report as reports
+
+      # Characters XML 1.0 cannot hold, even escaped.
+      _UNSAFE = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]")
+
+
+      def _text(value: str) -> str:
+          return _UNSAFE.sub("\ufffd", value)
+
+
+      def _diagnostic(diagnostic: dict[str, Any]) -> str:
+          where = f" [{diagnostic['element']}]" if diagnostic["element"] else ""
+          line = f"{diagnostic['code']} {diagnostic['severity']}{where}: {diagnostic['message']}"
+          return f"{line}\n  Fix: {diagnostic['fix']}" if diagnostic["fix"] else line
+
+
+      def _case(suite: ET.Element, name: str, classname: str) -> ET.Element:
+          return ET.SubElement(suite, "testcase", name=_text(name), classname=_text(classname))
+
+
+      def _outcome(case: ET.Element, tag: str, message: str, details: list[str]) -> None:
+          """Mark ``case`` failed, errored or skipped, with ``message`` and ``details``."""
+          outcome = ET.SubElement(case, tag, message=_text(message))
+          if details:
+              outcome.text = _text("\n".join(details))
+
+
+      def document(report: dict[str, Any] | None, result: int, unreadable: str = "") -> ET.Element:
+          """The JUnit document of a run that exited with ``result``."""
+          name = (report or {}).get("justification") or "jpipe-runner"
+          root = ET.Element("testsuites", name="jpipe-runner")
+          suite = ET.SubElement(root, "testsuite", name=_text(name))
+          if report is None:
+              why = unreadable or "it wrote no report: see the job log"
+              message = f"jpipe-runner exited with code {result}; {why}"
+              _outcome(_case(suite, "jpipe-runner", name), "error", message, [])
+              return _counted(root, suite)
+
+          diagnostics = report["diagnostics"]
+          general = [_diagnostic(d) for d in diagnostics if d["element"] is None]
+          validation = _case(suite, "validation", name)
+          if report["verdict"] == "invalid":
+              _outcome(validation, "error", "nothing ran", [_diagnostic(d) for d in diagnostics])
+          elif general:
+              ET.SubElement(validation, "system-out").text = _text("\n".join(general))
+
+          not_run = "a dry run calls no step" if report["verdict"] == "valid" else "nothing ran"
+          for element in report["elements"]:
+              case = _case(suite, f"{element['label']} [{element['id']}]", f"{name}.{element['kind']}")
+              details = [_diagnostic(d) for d in diagnostics if d["element"] == element["id"]]
+              status, reason = element["status"], element["reason"] or ""
+              if status == "fail":
+                  _outcome(case, "failure", reason or "failed", details)
+              elif status == "skip":
+                  _outcome(case, "skipped", reason or "skipped", details)
+              elif status is None:
+                  _outcome(case, "skipped", not_run, details)
+              else:
+                  reused = element.get("reused")
+                  notes = ["reused from the baseline of an incremental run"] if reused else []
+                  if notes + details:
+                      ET.SubElement(case, "system-out").text = _text("\n".join(notes + details))
+          return _counted(root, suite)
+
+
+      def _counted(root: ET.Element, suite: ET.Element) -> ET.Element:
+          """Set the counts JUnit readers expect on the suite and the root."""
+          cases = suite.findall("testcase")
+          counts = {
+              "tests": len(cases),
+              "failures": sum(1 for case in cases if case.find("failure") is not None),
+              "errors": sum(1 for case in cases if case.find("error") is not None),
+              "skipped": sum(1 for case in cases if case.find("skipped") is not None),
+          }
+          for element in (suite, root):
+              for key, count in counts.items():
+                  element.set(key, str(count))
+          return root
+
+
+      def main(argv: list[str]) -> int:
+          parser = argparse.ArgumentParser(description="Write a JUnit XML report of a run.")
+          parser.add_argument("report", help="jpipe-runner's JSON report; one that is not there is no report")
+          parser.add_argument("junit", help="the JUnit XML file to write")
+          parser.add_argument("--result", type=int, required=True, help="jpipe-runner's exit code")
+          options = parser.parse_args(argv)
+          unreadable = ""
+          try:
+              report = reports.load(options.report)
+          except reports.Unreadable as error:
+              report, unreadable = None, f"{error}"
+          tree = ET.ElementTree(document(report, options.result, unreadable))
+          ET.indent(tree)
+          tree.write(options.junit, encoding="utf-8", xml_declaration=True)
+          return 0
+
+
+      if __name__ == "__main__":
+          sys.exit(main(sys.argv[1:]))
+      JPIPE_SCRIPT_END
       cat > "$JPIPE_SCRIPTS/report.py" <<'JPIPE_SCRIPT_END'
       """Read the JSON report jpipe-runner wrote, when this action knows its schema.
 
@@ -553,9 +674,10 @@ spec:
       #   JPIPE_OUTPUT_DIR      Directory the report, the logs and the diagram are written to
       #   JPIPE_OUTPUTS         File that receives the outputs, one `key=value` per line
       #
-      # Outputs: result (the runner's exit code), verdict, report, text, log, diagram. The
-      # verdict is empty when the report's schema is one this action does not read (report.py).
-      # The paths are absolute; one the run did not write is left empty.
+      # Outputs: result (the runner's exit code), verdict, report, text, log, diagram, junit
+      # (junit.py's JUnit XML report of the run, written whether the run wrote a report or not).
+      # The verdict is empty when the report's schema is one this action does not read
+      # (report.py). The paths are absolute; one that was not written is left empty.
       #
       # The command is an array: every value reaches jpipe-runner as one literal argument, and
       # is never parsed by the shell (no eval). Platform-neutral (docs/adr/0001).
@@ -572,6 +694,7 @@ spec:
       report="$output_dir/report.json"
       text="$output_dir/report.txt"
       log="$output_dir/log.txt"
+      junit="$output_dir/junit.xml"
 
       name="$(basename "$justification")"
       name="${name%.*}${JPIPE_SUFFIX:+-$JPIPE_SUFFIX}"
@@ -613,7 +736,7 @@ spec:
       command+=(--report "$report" --colour never "$justification")
 
       # A file left by an earlier run in the same folder would be reported as this run's.
-      rm -f -- "$report" "$text" "$log" ${diagram:+"$diagram"}
+      rm -f -- "$report" "$text" "$log" "$junit" ${diagram:+"$diagram"}
 
       if [[ -n "$usage" ]]; then
         : > "$text"
@@ -637,7 +760,10 @@ spec:
         if [[ -n "$1" && -f "$1" ]]; then printf '%s' "$1"; fi
       }
       # Empty, with a warning, for a report whose schema this action does not read.
-      verdict="$("$python" "$(dirname "${BASH_SOURCE[0]}")/report.py" verdict "$report")"
+      scripts="$(dirname "${BASH_SOURCE[0]}")"
+      verdict="$("$python" "$scripts/report.py" verdict "$report")"
+      "$python" "$scripts/junit.py" "$report" "$junit" --result "$result" \
+        || echo "warning: the JUnit report could not be written" >&2
 
       {
         echo "result=$result"
@@ -646,6 +772,7 @@ spec:
         echo "text=$text"
         echo "log=$log"
         echo "diagram=$(existing "$diagram")"
+        echo "junit=$(existing "$junit")"
       } >> "$outputs"
 
       # The runner's exit code is an output, not this script's: the front end reports the run
@@ -685,10 +812,15 @@ spec:
     - |
       # The job fails with the runner's exit code, once the run is reported.
       result="$(sed -n 's/^result=//p' "$JPIPE_OUTPUTS")"
-      echo "The reports and the diagram are in the job's artifacts, under .jpipe-runner/."
+      echo "The reports and the diagram are in the job's artifacts, under .jpipe-runner/;"
+      echo "the merge request's test summary shows the JUnit report."
       exit "${result:-1}"
+  # The JUnit report shows the run in the merge request's test summary and the
+  # pipeline's Tests tab: one test case per element, and one for validation.
   artifacts:
     name: $[[ inputs.artifact-name ]]
     when: always
     paths:
       - .jpipe-runner/
+    reports:
+      junit: .jpipe-runner/junit.xml
