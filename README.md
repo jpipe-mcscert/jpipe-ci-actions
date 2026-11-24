@@ -81,12 +81,14 @@ include:
 | `justification` | required | The justification: the JSON file the jPipe compiler writes, relative to `working-directory`. |
 | `library` | required | The step libraries, one per line: Python files, or globs of files. |
 | `python-path` | | Directories the step libraries import modules from, one per line. |
-| `working-directory` | `.` | Directory to run from: the paths the evidence observes are relative to it. |
+| `working-directory` | `.` | Directory to run from: `justification`, `library` and `python-path` are relative to it. The paths the evidence observes are relative to the step library's file. |
 | `strict` | `false` | Count validation warnings as errors, and fail a skipped justification. |
 | `dry-run` | `false` | Validate the step libraries against the justification, and call no step. |
-| `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. |
+| `jobs` | | How many steps to run at a time when the argument does not order them: a number, or `auto` for one per CPU; empty for one at a time. The step libraries must be written for it ([steps that run together](https://github.com/jpipe-mcscert/jpipe-runner/blob/main/docs/authoring.md#steps-that-run-together)): a step that writes a file another evidence observes can fail with `JP019`, now and then. Needs jPipe Runner 4.4.0 or later. |
+| `diagram-format` | `svg` | Format of the diagram of the run: `svg`, `png`, `pdf`, `dot`, `jpg`, `jpeg` or `gif`; empty for none. For a format other than `svg`, the action installs DejaVu Sans if it is missing, for the status symbols (with `apt-get`; elsewhere it warns). |
+| `verbosity` | | What jPipe Runner logs: `quiet` (errors only), `normal` (warnings and errors), `verbose` (what the run does, such as the Python that runs the steps) or `debug` (details, such as the libraries a glob matched and `sys.path`). Empty is `normal`, or `debug` on a re-run with debug logging turned on. |
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11. |
-| `runner-version` | `4.0.0` | jPipe Runner to install: a release on PyPI (`4.0.0`), or a git ref of its repository. |
+| `runner-version` | `4.5.0` | jPipe Runner to install: a release on PyPI (`4.5.0`), or a git ref of its repository. |
 | `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. In a matrix, the default is `jpipe-runner-<job>-<index>`, the job's index in the matrix; name it after a matrix value instead (`jpipe-${{ matrix.os }}`) to tell the artifacts apart, and to keep each job's comment on the pull request when the matrix changes. Set it in a reusable workflow called from a matrix, which sees only its own job. |
 | `comment` | `true` | Comment on the pull request, and edit that comment on later runs. |
 | `embed-image` | `false` | Commit the diagram to `image-branch`, and show it in the comment. |
@@ -113,6 +115,32 @@ a branch, and shows it from there. For a private repository, the URL holds a tok
 expires: the image may stop showing after a while, and the comment always links to the
 artifact as well.
 
+### Upgrading from 1.x
+
+2.0.0 installs jPipe Runner 4.5.0 by default, where 1.x installed 4.0.0. To upgrade the
+action without changing runners at first, set `runner-version: 4.0.0`. To use the new
+default, check the step libraries and the models against the runner's breaking changes
+since 4.0.0 ([CHANGELOG](https://github.com/jpipe-mcscert/jpipe-runner/blob/main/CHANGELOG.md)):
+
+- **The paths an evidence observes are relative to the step library's file** (4.1.0), no
+  longer to `working-directory`. A library that is not in `working-directory` fails with
+  `JP019`, naming the path it looked for, until its paths are rewritten.
+- **A composed model compiled by jPipe older than 4.0.0 must be compiled again** (4.3.0):
+  the runner stops with `JP016`.
+- **`JP027` is a new warning** (4.3.0): a step that never reads a value it consumes, or an
+  artifact it observes. With `strict: true`, a library that ran may now fail.
+
+Three changes concern workflows, whatever the runner:
+
+- **The `dataflow` input and output are gone.** With runner 4.1.0 or later, the runner
+  draws one diagram, the dataflow, and the `diagram` output is its path.
+
+- **In a matrix, the default artifact name ends with the job's index**,
+  `jpipe-runner-<job>-<index>`. A job that downloads `jpipe-runner-<job>` must set
+  `artifact-name`.
+- **The action edits its comment on the pull request** rather than adding one per run.
+  It does not recognise the comments 1.x wrote: the first run after the upgrade adds one.
+
 ### Coming from jpipe-runner's action
 
 The action that lived at jpipe-runner's root (`uses: jpipe-mcscert/jpipe-runner@v3.x`)
@@ -135,7 +163,7 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 | `scripts/` | Behaviour shared by both, free of platform-specific variables |
 | `github/` | Behaviour of the GitHub Action alone: committing the diagram, finding its URL |
 | `example/` | A justification and its step library, which CI runs the action on |
-| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example with the default and the latest jPipe Runner (and, without failing, the runner's `dev` branch), checks that hostile inputs run nothing, and that a pull request keeps one comment; weekly as well |
+| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example with the default and the latest jPipe Runner (and, without failing, the runner's `dev` branch), runs the inputs the example leaves unset (`jobs`, `verbosity`, a PNG diagram) on the slim image too, checks that hostile inputs run nothing, and that a pull request keeps one comment; weekly as well |
 | `.github/workflows/mirror.yml` | Pushes `main` and the tags to the GitLab mirror |
 | `.github/workflows/release.yml` | Adds the GitHub release page when a version tag is pushed |
 | `.gitlab-ci.yml` | Runs on the GitLab mirror: tests the component, publishes Catalog releases |
@@ -143,7 +171,8 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 
 [ADR-0001](docs/adr/0001-one-repository-two-front-ends.md) explains the layout and the
 rules that keep the two front ends in step; [ADR-0002](docs/adr/0002-runner-4-github-first.md)
-why the action runs jPipe Runner 4, and GitHub comes first.
+why the action runs jPipe Runner 4, and GitHub comes first; [ADR-0003](docs/adr/0003-the-default-runner-follows-semver.md)
+how its default runner follows the runner's releases.
 
 ## Maintainers
 

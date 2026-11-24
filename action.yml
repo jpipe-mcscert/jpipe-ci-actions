@@ -20,7 +20,7 @@ inputs:
     required: false
     default: ""
   working-directory:
-    description: "Directory to run jPipe Runner from: the paths the evidence observes are relative to it"
+    description: "Directory to run jPipe Runner from: justification, library and python-path are relative to it. The paths the evidence observes are relative to the step library's file"
     required: false
     default: "."
   strict:
@@ -31,18 +31,26 @@ inputs:
     description: "If true, validate the step libraries against the justification, and call no step"
     required: false
     default: "false"
+  jobs:
+    description: "How many steps to run at a time, when the argument does not order them: a number, or auto for one per CPU; empty for one at a time. The step libraries must be written for it"
+    required: false
+    default: ""
   diagram-format:
     description: "Format of the diagram drawn of the run: svg, png, pdf, dot, jpg, jpeg or gif; empty for none"
     required: false
     default: "svg"
+  verbosity:
+    description: "What jPipe Runner logs: quiet (errors only), normal, verbose or debug; empty for normal, or for debug on a re-run with debug logging"
+    required: false
+    default: ""
   python-executable:
     description: "Python interpreter to run jPipe Runner with, which sees the packages the step libraries import; by default the action sets up Python 3.11"
     required: false
     default: ""
   runner-version:
-    description: "jPipe Runner to install: a release on PyPI (4.0.0), or a git ref of its repository (main, a commit)"
+    description: "jPipe Runner to install: a release on PyPI (4.5.0), or a git ref of its repository (main, a commit)"
     required: false
-    default: "4.0.0"
+    default: "4.5.0"
   artifact-name:
     description: "Name of the artifact holding the reports and the diagram; by default jpipe-runner-<job>, and jpipe-runner-<job>-<index> in a matrix. Set it to run the action twice in one job"
     required: false
@@ -103,15 +111,30 @@ runs:
     - name: Install Graphviz
       if: ${{ inputs.diagram-format != '' && inputs.diagram-format != 'dot' }}
       shell: bash
+      env:
+        FORMAT: ${{ inputs.diagram-format }}
       run: |
         # Only the dot program is needed. Most GitHub-hosted images have it already.
-        if command -v dot > /dev/null; then
-          echo "Graphviz is installed: $(dot -V 2>&1)"
-        else
-          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq graphviz > /dev/null
-          echo "Graphviz installed: $(dot -V 2>&1)"
+        packages=()
+        command -v dot > /dev/null || packages+=(graphviz)
+        # The diagram marks each status with a symbol (✔ ✘ ◌ ⚠). An SVG leaves them to the
+        # browser; any other format draws them with a font installed here, and without
+        # one that has them, they come out as empty boxes. The list is read whole: grep
+        # -q stopping early must not make fc-list fail under pipefail.
+        fonts="$(fc-list : family 2> /dev/null || true)"
+        if [[ "$FORMAT" != "svg" ]] && ! grep -qi "DejaVu Sans" <<< "$fonts"; then
+          if command -v apt-get > /dev/null; then
+            packages+=(fonts-dejavu-core)
+          else
+            echo "::warning::No DejaVu Sans font here, and no apt-get to install it: the status symbols of the $FORMAT diagram may show as empty boxes"
+          fi
         fi
+        if (( ${#packages[@]} )); then
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${packages[@]}" > /dev/null
+          echo "Installed: ${packages[*]}"
+        fi
+        echo "Graphviz: $(dot -V 2>&1)"
 
     - name: Set up Python
       id: python
@@ -153,6 +176,10 @@ runs:
         JPIPE_PYTHON_PATH: ${{ inputs.python-path }}
         JPIPE_STRICT: ${{ inputs.strict }}
         JPIPE_DRY_RUN: ${{ inputs.dry-run }}
+        JPIPE_JOBS: ${{ inputs.jobs }}
+        # A re-run with debug logging logs the runner's details too, unless the workflow
+        # chose a verbosity.
+        JPIPE_VERBOSITY: ${{ inputs.verbosity || (runner.debug == '1' && 'debug') || 'normal' }}
         JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
         # The pull request's head, for a pull request; the commit that ran, otherwise.
         JPIPE_SUFFIX: ${{ github.event.pull_request.head.sha || github.sha }}

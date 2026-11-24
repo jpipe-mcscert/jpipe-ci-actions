@@ -8,6 +8,9 @@
 #   JPIPE_PYTHON_PATH     Directories the libraries import modules from, one per line
 #   JPIPE_STRICT          "true" counts validation warnings as errors, and fails a skip
 #   JPIPE_DRY_RUN         "true" validates the libraries and calls no step
+#   JPIPE_JOBS            Steps run at a time: a number, or auto; empty: the runner's default
+#   JPIPE_VERBOSITY       quiet, normal (the default), verbose or debug; another value
+#                         is a usage error, exit code 2
 #   JPIPE_DIAGRAM_FORMAT  Format of the diagram (svg, png, pdf, dot, ...); empty: none
 #   JPIPE_SUFFIX          Appended to the diagram's name, such as a commit SHA
 #   JPIPE_OUTPUT_DIR      Directory the report, the logs and the diagram are written to
@@ -46,6 +49,16 @@ while IFS= read -r line; do
 done <<< "${JPIPE_PYTHON_PATH:-}"
 [[ "${JPIPE_STRICT:-false}" == "true" ]] && command+=(--strict)
 [[ "${JPIPE_DRY_RUN:-false}" == "true" ]] && command+=(--dry-run)
+[[ -n "${JPIPE_JOBS:-}" ]] && command+=(--jobs "$JPIPE_JOBS")
+# A value the runner would not get is a usage error, reported as the runner reports one.
+usage=""
+case "${JPIPE_VERBOSITY:-normal}" in
+  quiet) command+=(-q) ;;
+  normal) ;;
+  verbose) command+=(-v) ;;
+  debug) command+=(-vv) ;;
+  *) usage="error: verbosity must be quiet, normal, verbose or debug, not '$JPIPE_VERBOSITY'" ;;
+esac
 if [[ -n "$format" ]]; then
   diagram="$output_dir/$name.$format"
   command+=(--diagram "$diagram")
@@ -55,13 +68,20 @@ command+=(--report "$report" --colour never "$justification")
 # A file left by an earlier run in the same folder would be reported as this run's.
 rm -f -- "$report" "$text" "$log" ${diagram:+"$diagram"}
 
-# %q shows each argument as the shell would need it quoted, so the log is unambiguous.
-printf 'Running:'
-printf ' %q' "${command[@]}"
-printf '\n'
-"${command[@]}" > "$text" 2> "$log"
-result=$?
-echo "jpipe-runner exited with code $result"
+if [[ -n "$usage" ]]; then
+  : > "$text"
+  echo "$usage" > "$log"
+  result=2
+  echo "jpipe-runner not run: usage error (exit code $result)"
+else
+  # %q shows each argument as the shell would need it quoted, so the log is unambiguous.
+  printf 'Running:'
+  printf ' %q' "${command[@]}"
+  printf '\n'
+  "${command[@]}" > "$text" 2> "$log"
+  result=$?
+  echo "jpipe-runner exited with code $result"
+fi
 cat "$log" "$text"
 
 # A file the run did not write is not reported: a usage error writes nothing, and a
