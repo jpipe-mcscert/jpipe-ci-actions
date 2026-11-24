@@ -41,10 +41,10 @@ def _case(suite: ET.Element, name: str, classname: str) -> ET.Element:
 
 
 def _outcome(case: ET.Element, tag: str, message: str, details: list[str]) -> None:
-    """Mark ``case`` failed, errored or skipped, with ``message`` and ``details``."""
+    """Mark ``case`` failed, errored or skipped, with ``message`` and ``details``. The
+    message is in the text too: GitLab shows the text, not the attribute."""
     outcome = ET.SubElement(case, tag, message=_text(message))
-    if details:
-        outcome.text = _text("\n".join(details))
+    outcome.text = _text("\n".join([message, *details]))
 
 
 def document(report: dict[str, Any] | None, result: int, unreadable: str = "") -> ET.Element:
@@ -70,7 +70,10 @@ def document(report: dict[str, Any] | None, result: int, unreadable: str = "") -
     not_run = "a dry run calls no step" if report["verdict"] == "valid" else "nothing ran"
     for element in report["elements"]:
         case = _case(suite, f"{element['label']} [{element['id']}]", f"{name}.{element['kind']}")
+        # A skip can be reused as well as a pass; a failure is always run again.
         details = [_diagnostic(d) for d in diagnostics if d["element"] == element["id"]]
+        if element.get("reused"):
+            details.insert(0, "reused from the baseline of an incremental run")
         status, reason = element["status"], element["reason"] or ""
         if status == "fail":
             _outcome(case, "failure", reason or "failed", details)
@@ -78,11 +81,8 @@ def document(report: dict[str, Any] | None, result: int, unreadable: str = "") -
             _outcome(case, "skipped", reason or "skipped", details)
         elif status is None:
             _outcome(case, "skipped", not_run, details)
-        else:
-            reused = element.get("reused")
-            notes = ["reused from the baseline of an incremental run"] if reused else []
-            if notes + details:
-                ET.SubElement(case, "system-out").text = _text("\n".join(notes + details))
+        elif details:
+            ET.SubElement(case, "system-out").text = _text("\n".join(details))
     # A run can fail the job with no element failed: a strict run that skipped, or a
     # report written but not the diagram. The widget must not show it as a success.
     if result != 0 and not any(
