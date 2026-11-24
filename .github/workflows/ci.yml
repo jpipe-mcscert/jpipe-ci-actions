@@ -93,6 +93,8 @@ jobs:
           \`touch INJECTED-backtick\`" \
             --input "python-path=src'; touch INJECTED-python-path; echo '"
           first=$?
+          # The runner ran and refused: not run-job.py refusing its arguments.
+          [[ -s .jpipe-runner/log.txt ]] || { echo "::error::the job did not run (exit code $first)"; exit 1; }
           python3 gitlab/run-job.py --input working-directory=example \
             --input justification=justification.json --input library=steps.py \
             --input "jobs=2; touch INJECTED-jobs" \

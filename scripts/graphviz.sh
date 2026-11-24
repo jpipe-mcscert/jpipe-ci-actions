@@ -7,8 +7,9 @@
 #   JPIPE_WARNING         What a warning line starts with (default: "warning: "), such as
 #                         a front end's annotation syntax
 #
-# Installs with apt-get, as root or through sudo; elsewhere it warns, and the runner says
-# whether the diagram could be drawn. Platform-neutral (docs/adr/0001).
+# Installs with apt-get, as root or through a sudo that asks no password; elsewhere it
+# warns, and the runner says whether the diagram could be drawn. Platform-neutral
+# (docs/adr/0001).
 set -euo pipefail
 
 format="${JPIPE_DIAGRAM_FORMAT:-}"
@@ -31,9 +32,9 @@ fi
 
 if (( ${#packages[@]} )); then
   sudo=()
-  (( EUID == 0 )) || sudo=(sudo)
-  if ! command -v apt-get > /dev/null || { (( ${#sudo[@]} )) && ! command -v sudo > /dev/null; }; then
-    warn "cannot install ${packages[*]} here (no apt-get, or not root and no sudo): the $format diagram may not be drawn, or its status symbols may show as empty boxes"
+  (( EUID == 0 )) || sudo=(sudo -n)
+  if ! command -v apt-get > /dev/null || { (( ${#sudo[@]} )) && ! sudo -n true 2> /dev/null; }; then
+    warn "cannot install ${packages[*]} here (no apt-get, or not root and no sudo without a password): the $format diagram may not be drawn, or its status symbols may show as empty boxes"
     exit 0
   fi
   "${sudo[@]}" env DEBIAN_FRONTEND=noninteractive apt-get update -qq

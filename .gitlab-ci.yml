@@ -93,7 +93,8 @@ check-hostile:
       import pathlib
       injected = [str(path) for path in pathlib.Path(".").rglob("INJECTED*")]
       assert not injected, f"a payload ran: {injected}"
-      assert (pathlib.Path(".jpipe-runner") / "log.txt").stat().st_size, "the run logged nothing"
+      log = (pathlib.Path(".jpipe-runner") / "log.txt").read_text()
+      assert "error" in log, f"the runner did not refuse the inputs: {log!r}"
       print("the runner refused the inputs, and no payload ran")
       EOF
 

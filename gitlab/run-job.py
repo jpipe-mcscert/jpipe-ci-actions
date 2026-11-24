@@ -15,6 +15,7 @@ of whole values and of text, variables with `expand: false`, and the script.
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -74,9 +75,13 @@ def main(argv: list[str]) -> int:
     env = dict(os.environ)
     # The commit: as the environment gives it, or as git does; a checkout without git
     # has none.
-    sha = env.get("CI_COMMIT_SHA") or subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
-    ).stdout.strip()
+    sha = env.get("CI_COMMIT_SHA") or (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False
+        ).stdout.strip()
+        if shutil.which("git")
+        else ""
+    )
     env.update(CI_PROJECT_DIR=str(project), CI_COMMIT_SHA=sha or "0" * 40, CI_JOB_NAME=name)
     for variable, declared in job.get("variables", {}).items():
         # Every variable of the template is declared with `expand: false`: its value is

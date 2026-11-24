@@ -10,9 +10,9 @@
 #         library: steps.py
 #
 # Every input of action.yml has its counterpart here, with the same name and default
-# (docs/adr/0001), except the GitHub-only ones: comment and the image-* and github-*
-# inputs, which comment on a pull request and commit the diagram. stage, job-name and
-# image are GitLab's own.
+# (docs/adr/0001), except the GitHub-only ones: comment, embed-image, and the image-* and
+# github-* inputs, which comment on a pull request and commit the diagram. stage, job-name and
+# image are GitLab's own. Every input is a string: GitLab refuses an unquoted true or 4.
 #
 # The job runs in the consumer's project, where this repository is not checked out, so
 # the template carries scripts/ inline (docs/adr/0004): gitlab/inline.py writes the block
@@ -394,8 +394,9 @@ spec:
       #   JPIPE_WARNING         What a warning line starts with (default: "warning: "), such as
       #                         a front end's annotation syntax
       #
-      # Installs with apt-get, as root or through sudo; elsewhere it warns, and the runner says
-      # whether the diagram could be drawn. Platform-neutral (docs/adr/0001).
+      # Installs with apt-get, as root or through a sudo that asks no password; elsewhere it
+      # warns, and the runner says whether the diagram could be drawn. Platform-neutral
+      # (docs/adr/0001).
       set -euo pipefail
 
       format="${JPIPE_DIAGRAM_FORMAT:-}"
@@ -418,9 +419,9 @@ spec:
 
       if (( ${#packages[@]} )); then
         sudo=()
-        (( EUID == 0 )) || sudo=(sudo)
-        if ! command -v apt-get > /dev/null || { (( ${#sudo[@]} )) && ! command -v sudo > /dev/null; }; then
-          warn "cannot install ${packages[*]} here (no apt-get, or not root and no sudo): the $format diagram may not be drawn, or its status symbols may show as empty boxes"
+        (( EUID == 0 )) || sudo=(sudo -n)
+        if ! command -v apt-get > /dev/null || { (( ${#sudo[@]} )) && ! sudo -n true 2> /dev/null; }; then
+          warn "cannot install ${packages[*]} here (no apt-get, or not root and no sudo without a password): the $format diagram may not be drawn, or its status symbols may show as empty boxes"
           exit 0
         fi
         "${sudo[@]}" env DEBIAN_FRONTEND=noninteractive apt-get update -qq
@@ -436,8 +437,8 @@ spec:
       # Environment:
       #   JPIPE_PYTHON          Python interpreter to install into (default: python3)
       #   JPIPE_RUNNER_VERSION  A release on PyPI (4.5.0), or a git ref of the jpipe-runner
-      #                         repository (main, a branch, a commit), installed from GitHub's
-      #                         archive of it, which needs no git where it runs.
+      #                         repository (main, a branch, a commit), installed from GitHub:
+      #                         with git where there is one, from GitHub's archive elsewhere.
       #                         Default: 4.5.0, as action.yml's runner-version.
       #
       # Platform-neutral: no GitHub or GitLab variables (docs/adr/0001).
@@ -452,9 +453,13 @@ spec:
       if [[ "$version" =~ ^[0-9]+(\.[0-9]+)*((a|b|rc)[0-9]+)?(\.post[0-9]+)?(\.dev[0-9]+)?$ ]]; then
         requirement="jpipe-runner==${version}"
       else
-        # The runner's version is written in its pyproject.toml, not read from git, so an
-        # archive builds as a clone would.
-        requirement="jpipe-runner @ ${repository}/archive/${version}.tar.gz"
+        if command -v git > /dev/null; then
+          requirement="jpipe-runner @ git+${repository}.git@${version}"
+        else
+          # An image without git, such as python:3.11-slim. The runner's version is written in
+          # its pyproject.toml, not read from git, so an archive builds as a clone would.
+          requirement="jpipe-runner @ ${repository}/archive/${version}.tar.gz"
+        fi
       fi
 
       echo "Installing ${requirement} with $("$python" --version 2>&1) ($python)"
@@ -649,7 +654,12 @@ spec:
       JPIPE_SCRIPT_END
       # <<< scripts/
     - |
+      # A relative path is the project's: made absolute, it stays the same Python once
+      # the run changes to working-directory. A bare name is looked up on PATH.
       export JPIPE_PYTHON="${JPIPE_PYTHON_EXECUTABLE:-python3}"
+      if [[ "$JPIPE_PYTHON" == */* && "$JPIPE_PYTHON" != /* ]]; then
+        JPIPE_PYTHON="$CI_PROJECT_DIR/$JPIPE_PYTHON"
+      fi
       bash "$JPIPE_SCRIPTS/graphviz.sh"
       bash "$JPIPE_SCRIPTS/install.sh"
     - |
@@ -671,7 +681,7 @@ spec:
       export JPIPE_SUFFIX="$CI_COMMIT_SHA"
       export JPIPE_OUTPUT_DIR="$CI_PROJECT_DIR/.jpipe-runner"
       export JPIPE_OUTPUTS="$JPIPE_SCRIPTS/outputs"
-      (cd "$JPIPE_WORKING_DIRECTORY" && bash "$JPIPE_SCRIPTS/run.sh")
+      (cd -- "$JPIPE_WORKING_DIRECTORY" && bash "$JPIPE_SCRIPTS/run.sh")
     - |
       # The job fails with the runner's exit code, once the run is reported.
       result="$(sed -n 's/^result=//p' "$JPIPE_OUTPUTS")"

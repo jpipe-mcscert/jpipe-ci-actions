@@ -121,7 +121,7 @@ runs:
       env:
         JPIPE_DIAGRAM_FORMAT: ${{ inputs.diagram-format }}
         JPIPE_WARNING: "::warning::"
-      run: ${{ github.action_path }}/scripts/graphviz.sh
+      run: '"${{ github.action_path }}/scripts/graphviz.sh"'
 
     - name: Set up Python
       id: python
@@ -135,7 +135,7 @@ runs:
       env:
         JPIPE_PYTHON: ${{ inputs.python-executable || steps.python.outputs.python-path }}
         JPIPE_RUNNER_VERSION: ${{ inputs.runner-version }}
-      run: ${{ github.action_path }}/scripts/install.sh
+      run: '"${{ github.action_path }}/scripts/install.sh"'
 
     # A folder of its own: a second run in the same job (see artifact-name) must neither
     # report nor upload the files of the first. The artifact's name also tells this run's
@@ -198,7 +198,12 @@ runs:
         # The pull request's head, for a pull request; the commit that ran, otherwise.
         JPIPE_SUFFIX: ${{ github.event.pull_request.head.sha || github.sha }}
         JPIPE_OUTPUT_DIR: ${{ steps.folder.outputs.path }}
-      run: JPIPE_OUTPUTS="$GITHUB_OUTPUT" "${{ github.action_path }}/scripts/run.sh"
+      run: |
+        # A relative python-executable is the workspace's, where the install step ran.
+        if [[ "$JPIPE_PYTHON" == */* && "$JPIPE_PYTHON" != /* ]]; then
+          JPIPE_PYTHON="$GITHUB_WORKSPACE/$JPIPE_PYTHON"
+        fi
+        JPIPE_OUTPUTS="$GITHUB_OUTPUT" "${{ github.action_path }}/scripts/run.sh"
 
     # A push runs in full, so that the branch is always checked whole, and saves its report
     # as the baseline of the pull requests into the branch. A pull request saves none: its

@@ -87,8 +87,8 @@ the GitHub-only ones (below). GitLab adds three of its own:
 | `job-name` | `jpipe-runner` | Name of the job. Include the component once per justification, each with its own `job-name`. |
 | `image` | `python:3.11-slim` | Image the job runs in: it needs bash and Python, with the packages the step libraries import. |
 
-GitLab checks the type of an input: write `strict`, `dry-run` and `incremental` as strings,
-`"true"` or `"false"`. A job's debug logging (`CI_DEBUG_TRACE`) sets `verbosity` to
+GitLab checks the type of an input, and every input here is a string: quote a value YAML
+would read otherwise, such as `strict: "true"` or `jobs: "4"`. A job's debug logging (`CI_DEBUG_TRACE`) sets `verbosity` to
 `debug`, as a re-run with debug logging does on GitHub. `incremental` needs `baseline` on
 GitLab: the component keeps no baseline of its own yet, and runs in full without one.
 
