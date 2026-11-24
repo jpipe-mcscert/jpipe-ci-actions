@@ -36,9 +36,11 @@ jobs:
 
 The job fails when the justification does not hold, with jPipe Runner's exit code. On a
 pull request, the action comments with the verdict, the elements that did not pass and
-why, every diagnostic with its fix, and the text report. The same comment is the job's
-summary, and the JSON report, the text report, the log and the diagram are uploaded as
-an artifact.
+why, every diagnostic with its fix, and the text report. Later runs edit that comment
+rather than add one: the pull request keeps one comment per workflow and artifact name,
+which shows the last run, and GitHub keeps the earlier ones in the comment's history. The
+same comment is the job's summary, and the JSON report, the text report, the log and the
+diagram are uploaded as an artifact.
 
 The step libraries run on the action's Python: by default the action sets up Python
 3.11. When they import packages, install those first, and give the action that
@@ -82,7 +84,7 @@ include:
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11. |
 | `runner-version` | `4.0.0` | jPipe Runner to install: a release on PyPI (`4.0.0`), or a git ref of its repository. |
 | `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. In a matrix, the default is `jpipe-runner-<job>-<index>`, the job's index in the matrix; name it after a matrix value instead (`jpipe-${{ matrix.os }}`) to tell the artifacts apart. Set it in a reusable workflow called from a matrix, which sees only its own job. |
-| `comment` | `true` | Comment on the pull request. |
+| `comment` | `true` | Comment on the pull request, and edit that comment on later runs. |
 | `embed-image` | `false` | Commit the diagram to `image-branch`, and show it in the comment. |
 | `image-repo` | this repository | Repository (`owner/name`) the diagram is committed to. |
 | `image-branch` | `jpipe-runner-diagrams` | Branch the diagram is committed to, created as an orphan. |
@@ -96,10 +98,10 @@ include:
 | Output | |
 |---|---|
 | `result` | jPipe Runner's exit code: 0 holds, 1 fails, 2 usage error, 3 nothing could run, 4 a file could not be read or written. |
-| `verdict` | `pass`, `fail`, `skip`, `valid` (a dry run) or `invalid`; empty when there is no report. |
+| `verdict` | `pass`, `fail`, `skip`, `valid` (a dry run) or `invalid`; empty when there is no report, or one whose schema this action does not read. |
 | `report` | Path to the JSON report, if one was written. |
 | `diagram` | Path to the diagram, if one was drawn. |
-| `comment-id` | ID of the pull request comment, if one was posted. |
+| `comment-id` | ID of the pull request comment, if one was posted or edited. |
 
 **Embedding the diagram.** GitHub shows a comment's images through a proxy that fetches
 them anonymously, and an artifact needs a login: so `embed-image` commits the diagram to
@@ -129,7 +131,7 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 | `scripts/` | Behaviour shared by both, free of platform-specific variables |
 | `github/` | Behaviour of the GitHub Action alone: committing the diagram, finding its URL |
 | `example/` | A justification and its step library, which CI runs the action on |
-| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example with the default and the latest jPipe Runner (and, without failing, the runner's `dev` branch), and checks that hostile inputs run nothing; weekly as well |
+| `.github/workflows/ci.yml` | Lints the repository, runs the action on the example with the default and the latest jPipe Runner (and, without failing, the runner's `dev` branch), checks that hostile inputs run nothing, and that a pull request keeps one comment; weekly as well |
 | `.github/workflows/mirror.yml` | Pushes `main` and the tags to the GitLab mirror |
 | `.github/workflows/release.yml` | Adds the GitHub release page when a version tag is pushed |
 | `.gitlab-ci.yml` | Runs on the GitLab mirror: tests the component, publishes Catalog releases |

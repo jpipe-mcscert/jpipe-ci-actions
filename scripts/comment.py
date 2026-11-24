@@ -7,16 +7,19 @@ The comment says what the run concluded (the verdict), how many elements ended h
 elements that did not pass and why, and every diagnostic with its fix; then the diagram,
 and the text report and the log, folded. It reads the JSON report, the runner's contract
 for programs, rather than its text output, whose layout may change. When there is no
-report (a usage error, or a file that could not be read), it shows the runner's log.
+report (a usage error, or a file that could not be read), it shows the runner's log; when
+the report has a schema this action does not read (report.py), it says so, and shows the
+text report and the log.
 
 Platform-neutral, standard library only (docs/adr/0001).
 """
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any
+
+import report as reports
 
 # GitHub refuses a comment longer than 65,536 characters, and the pull request then gets
 # no report. Every part that grows with the model or the run has its own share, so that
@@ -43,9 +46,13 @@ def render(
     log: str,
     image_url: str = "",
     artifact_url: str = "",
+    unreadable: str = "",
 ) -> str:
-    """The comment for a run that exited with ``result`` and wrote ``report``, if any."""
-    parts = [_headline(result, report)]
+    """The comment for a run that exited with ``result`` and wrote ``report``, if any.
+
+    ``unreadable`` says why a report that was written could not be read.
+    """
+    parts = [_headline(result, report, unreadable)]
     if report is not None:
         parts.append(_summary(report))
         parts.extend(section for section in (_stopped(report), _diagnostics(report)) if section)
@@ -55,7 +62,9 @@ def render(
     return "\n\n".join(part for part in parts if part) + "\n"
 
 
-def _headline(result: int, report: dict[str, Any] | None) -> str:
+def _headline(result: int, report: dict[str, Any] | None, unreadable: str) -> str:
+    if unreadable:
+        return f"### jpipe-runner exited with code {result}\n\nIt ran, but {unreadable}."
     if report is None:
         return f"### ✘ jpipe-runner stopped before it could report (exit code {result})"
     # A refused model has no name: it could not be read.
@@ -169,8 +178,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--image-url", default="", help="a URL the diagram can be shown from")
     parser.add_argument("--artifact-url", default="", help="a URL the diagram can be downloaded from")
     options = parser.parse_args(argv)
-    report_text = _read(options.report)
-    report = json.loads(report_text) if report_text else None
+    try:
+        report, unreadable = reports.load(options.report), ""
+    except reports.Unreadable as error:
+        report, unreadable = None, str(error)
     sys.stdout.write(
         render(
             result=options.result,
@@ -179,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
             log=_read(options.log),
             image_url=options.image_url,
             artifact_url=options.artifact_url,
+            unreadable=unreadable,
         )
     )
     return 0

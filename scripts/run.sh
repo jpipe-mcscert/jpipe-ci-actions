@@ -13,7 +13,8 @@
 #   JPIPE_OUTPUT_DIR      Directory the report, the logs and the diagram are written to
 #   JPIPE_OUTPUTS         File that receives the outputs, one `key=value` per line
 #
-# Outputs: result (the runner's exit code), verdict, report, text, log, diagram.
+# Outputs: result (the runner's exit code), verdict, report, text, log, diagram. The
+# verdict is empty when the report's schema is one this action does not read (report.py).
 # The paths are absolute; one the run did not write is left empty.
 #
 # The command is an array: every value reaches jpipe-runner as one literal argument, and
@@ -68,10 +69,8 @@ cat "$log" "$text"
 existing() {
   if [[ -n "$1" && -f "$1" ]]; then printf '%s' "$1"; fi
 }
-verdict=""
-if [[ -f "$report" ]]; then
-  verdict="$("$python" -c 'import json, sys; print(json.load(open(sys.argv[1]))["verdict"])' "$report")"
-fi
+# Empty, with a warning, for a report whose schema this action does not read.
+verdict="$("$python" "$(dirname "${BASH_SOURCE[0]}")/report.py" verdict "$report")"
 
 {
   echo "result=$result"
