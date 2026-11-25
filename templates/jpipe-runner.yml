@@ -81,7 +81,7 @@ spec:
       default: "true"
     # GitLab only.
     gitlab-token:
-      description: "Token that posts the note on the merge request: a project access token with the api scope, as a masked CI/CD variable such as $JPIPE_GITLAB_TOKEN. CI_JOB_TOKEN cannot post notes; empty posts none"
+      description: "The CI/CD variable that holds the token that posts the note on the merge request, such as $JPIPE_GITLAB_TOKEN: a project access token with the api scope, kept masked. Its name, never the token itself. CI_JOB_TOKEN cannot post notes; empty posts none"
       default: ""
 ---
 "$[[ inputs.job-name ]]":
@@ -133,16 +133,16 @@ spec:
     JPIPE_COMMENT:
       value: $[[ inputs.comment ]]
       expand: false
-    # Expanded, unlike the others: its value names the CI/CD variable that holds the
-    # token. GitLab substitutes variables there, and no shell reads it as source.
-    JPIPE_GITLAB_TOKEN:
+    # The name of the variable that holds the token, not the token: the job reads it, and
+    # gives it to note.py alone.
+    JPIPE_GITLAB_TOKEN_VARIABLE:
       value: $[[ inputs.gitlab-token ]]
-      expand: true
+      expand: false
   # Script lines are block scalars: a plain YAML line containing ": " parses as a
   # mapping, which GitLab rejects. They run in one shell, one after the other.
   script:
     - |
-      # >>> scripts/: written by gitlab/inline.py, do not edit
+      # >>> scripts/ and gitlab/job/: written by gitlab/inline.py, do not edit
       JPIPE_SCRIPTS="$(mktemp -d)"
       cat > "$JPIPE_SCRIPTS/comment.py" <<'JPIPE_SCRIPT_END'
       """Write the Markdown that reports a run, from the JSON report jpipe-runner wrote.
@@ -816,8 +816,9 @@ spec:
       or edits the note the job posted before. The GitLab counterpart of the action's comment on
       GitHub; the component's job runs it (templates/jpipe-runner.yml).
 
-      Environment: JPIPE_GITLAB_TOKEN, a token with the api scope (CI_JOB_TOKEN cannot post
-      notes), and GitLab's CI_API_V4_URL, CI_PROJECT_ID, CI_MERGE_REQUEST_IID, CI_JOB_NAME,
+      Environment: JPIPE_NOTE_TOKEN, a token with the api scope (CI_JOB_TOKEN cannot post
+      notes), which the job gives this script alone; and GitLab's CI_API_V4_URL,
+      CI_MERGE_REQUEST_PROJECT_ID (or CI_PROJECT_ID), CI_MERGE_REQUEST_IID, CI_JOB_NAME,
       CI_COMMIT_SHA and CI_MERGE_REQUEST_SOURCE_BRANCH_SHA. It never fails the job: what it
       cannot do, it warns about.
 
@@ -878,7 +879,7 @@ spec:
           # marker. A token that cannot say who it is posts a new note.
           try:
               user = gitlab.call("GET", "/user")[0]["id"]
-          except (urllib.error.URLError, KeyError, TypeError) as error:
+          except (urllib.error.URLError, ValueError, KeyError, TypeError) as error:
               warn(f"posting a new note: the token's user is unknown ({error})")
               user = None
           mine = [
@@ -910,7 +911,7 @@ spec:
               print("usage: note.py COMMENT", file=sys.stderr)
               return 2
           env = os.environ
-          token, iid = env.get("JPIPE_GITLAB_TOKEN", ""), env.get("CI_MERGE_REQUEST_IID", "")
+          token, iid = env.get("JPIPE_NOTE_TOKEN", ""), env.get("CI_MERGE_REQUEST_IID", "")
           if not token:
               print("No note: gitlab-token is not set")
               return 0
@@ -921,7 +922,9 @@ spec:
           # it. Encoded, so that no job name ends the HTML comment.
           marker = f"<!-- jpipe-ci-actions {urllib.parse.quote(env.get('CI_JOB_NAME', ''), safe='')} -->"
           body = f"{marker}\n{Path(argv[0]).read_text(encoding='utf-8')}"
-          project = urllib.parse.quote(env.get("CI_PROJECT_ID", ""), safe="")
+          # A merge request from a fork runs in the fork: the merge request is the target's.
+          project = env.get("CI_MERGE_REQUEST_PROJECT_ID") or env.get("CI_PROJECT_ID", "")
+          project = urllib.parse.quote(project, safe="")
           mr = f"/projects/{project}/merge_requests/{urllib.parse.quote(iid, safe='')}"
           # In a merged results pipeline, the commit is the merge's: the head is the source's.
           head = env.get("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA") or env.get("CI_COMMIT_SHA", "")
@@ -935,7 +938,7 @@ spec:
       if __name__ == "__main__":
           sys.exit(main(sys.argv[1:]))
       JPIPE_SCRIPT_END
-      # <<< scripts/
+      # <<< scripts/ and gitlab/job/
     - |
       # A relative path is the project's: made absolute, it stays the same Python once
       # the run changes to working-directory. A bare name is looked up on PATH.
@@ -967,19 +970,39 @@ spec:
       (cd -- "$JPIPE_WORKING_DIRECTORY" && bash "$JPIPE_SCRIPTS/run.sh")
     - |
       # The note on the merge request: comment.py's Markdown, as the action's comment on
-      # GitHub. Neither writing nor posting it fails the job.
-      # note.py says why it posts none, such as a pipeline with no merge request.
-      if [[ "$JPIPE_COMMENT" == "true" && -n "$JPIPE_GITLAB_TOKEN" ]]; then
+      # GitHub. note.py says why it posts none, such as a pipeline with no merge request.
+      # Neither writing nor posting it fails the job.
+      if [[ "$JPIPE_COMMENT" == "true" ]]; then
+        # gitlab-token names a variable ($NAME, ${NAME} or NAME), read here, and never
+        # printed: a value that is no name may be a token, written where it should not be.
+        name="${JPIPE_GITLAB_TOKEN_VARIABLE#\$}"
+        name="${name#\{}"
+        name="${name%\}}"
+        token=""
+        if [[ -n "$name" && ! "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+          echo "warning: gitlab-token must name a CI/CD variable that holds the token, such as \$JPIPE_GITLAB_TOKEN"
+        elif [[ -n "$name" ]]; then
+          token="${!name:-}"
+          if [[ -z "$token" ]]; then
+            echo "warning: gitlab-token names $name, which this pipeline does not set (a protected variable is set on protected branches only)"
+          fi
+        fi
         output() { sed -n "s/^$1=//p" "$JPIPE_OUTPUTS"; }
         baseline=""
         if [[ -n "$JPIPE_INCREMENTAL" ]]; then baseline="\`$JPIPE_BASELINE\`"; fi
+        # The diagram in the job's artifacts, once the job has ended and uploaded them.
+        diagram_url=""
+        diagram="$(output diagram)"
+        if [[ -n "$diagram" ]]; then
+          file="$("$JPIPE_PYTHON" -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$(basename "$diagram")")"
+          diagram_url="$CI_JOB_URL/artifacts/raw/.jpipe-runner/$file"
+        fi
         if "$JPIPE_PYTHON" "$JPIPE_SCRIPTS/comment.py" \
           --result "$(output result)" --report "$(output report)" \
-          --text "$(output text)" --log "$(output log)" \
-          --artifact-url "$CI_JOB_URL/artifacts/browse/.jpipe-runner/" \
+          --text "$(output text)" --log "$(output log)" --artifact-url "$diagram_url" \
           --commit "${CI_MERGE_REQUEST_SOURCE_BRANCH_SHA:-$CI_COMMIT_SHA}" \
           --run-url "$CI_JOB_URL" --baseline "$baseline" > "$JPIPE_SCRIPTS/comment.md"; then
-          "$JPIPE_PYTHON" "$JPIPE_SCRIPTS/note.py" "$JPIPE_SCRIPTS/comment.md" \
+          JPIPE_NOTE_TOKEN="$token" "$JPIPE_PYTHON" "$JPIPE_SCRIPTS/note.py" "$JPIPE_SCRIPTS/comment.md" \
             || echo "warning: the note could not be posted"
         else
           echo "warning: the note could not be written"

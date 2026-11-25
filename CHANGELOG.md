@@ -26,8 +26,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   path for a test report action (#19).
 - **The GitLab component posts the run on the merge request**, as the action comments on
   a pull request, and edits that note on later runs of the job. It needs `gitlab-token`,
-  a new GitLab-only input naming a masked CI/CD variable that holds a project access
-  token with the `api` scope: `CI_JOB_TOKEN` cannot post notes. `comment` works as on
+  a new GitLab-only input that names the masked CI/CD variable holding a project access
+  token with the `api` scope, such as `$JPIPE_GITLAB_TOKEN`: `CI_JOB_TOKEN` cannot post
+  notes. `comment` works as on
   GitHub, and `comment: "false"` posts none (#31).
 
 ### Fixed

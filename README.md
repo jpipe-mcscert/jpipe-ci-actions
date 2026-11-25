@@ -88,17 +88,21 @@ the GitHub-only ones (below). GitLab adds four of its own:
 | `stage` | `test` | Pipeline stage the job runs in. |
 | `job-name` | `jpipe-runner` | Name of the job. Include the component once per justification, each with its own `job-name`. |
 | `image` | `python:3.11-slim` | Image the job runs in: it needs bash and Python, with the packages the step libraries import. |
-| `gitlab-token` | | Token that posts the note on the merge request: a project access token with the `api` scope and at least the Reporter role, kept in a masked CI/CD variable and given by its name, such as `$JPIPE_GITLAB_TOKEN`. `CI_JOB_TOKEN` cannot post notes. Empty posts none. |
+| `gitlab-token` | | The CI/CD variable that holds the token that posts the note on the merge request, by its name, such as `$JPIPE_GITLAB_TOKEN`; never the token itself, which the job refuses. The token is a project access token with the `api` scope and at least the Reporter role, kept in a masked variable. `CI_JOB_TOKEN` cannot post notes. Empty posts none. |
 
 **The note on the merge request.** With `gitlab-token`, a merge request pipeline posts
 the run on the merge request, as the action comments on a pull request: the verdict, the
 elements that did not pass and why, each diagnostic with its fix, the text report and the
-log, and a link to the job's artifacts. Each later run of the job edits that note, found
+log, and a link to the diagram, which works once the job has ended and uploaded its
+artifacts. Each later run of the job edits that note, found
 by a hidden marker naming the job, and written by the token's user; a run whose commit
 is no longer the merge request's head leaves it alone. A pipeline needs merge request
 pipelines (`rules` or `workflow:rules` on `$CI_PIPELINE_SOURCE == "merge_request_event"`)
-to have a merge request to post on. If the note cannot be posted, the job warns and goes
-on. `comment: "false"` posts none.
+to have a merge request to post on; one from a fork posts on the target project's merge
+request. If the note cannot be posted, the job warns and goes on. `comment: "false"`
+posts none. The job gives the token to the script that posts the note alone; GitLab
+itself sets every CI/CD variable of the pipeline in every job, so protect the variable to
+keep it from the pipelines of unprotected branches.
 
 ```yaml
 include:

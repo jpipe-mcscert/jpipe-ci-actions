@@ -6,8 +6,9 @@ posts COMMENT, comment.py's Markdown, on the merge request of a merge request pi
 or edits the note the job posted before. The GitLab counterpart of the action's comment on
 GitHub; the component's job runs it (templates/jpipe-runner.yml).
 
-Environment: JPIPE_GITLAB_TOKEN, a token with the api scope (CI_JOB_TOKEN cannot post
-notes), and GitLab's CI_API_V4_URL, CI_PROJECT_ID, CI_MERGE_REQUEST_IID, CI_JOB_NAME,
+Environment: JPIPE_NOTE_TOKEN, a token with the api scope (CI_JOB_TOKEN cannot post
+notes), which the job gives this script alone; and GitLab's CI_API_V4_URL,
+CI_MERGE_REQUEST_PROJECT_ID (or CI_PROJECT_ID), CI_MERGE_REQUEST_IID, CI_JOB_NAME,
 CI_COMMIT_SHA and CI_MERGE_REQUEST_SOURCE_BRANCH_SHA. It never fails the job: what it
 cannot do, it warns about.
 
@@ -68,7 +69,7 @@ def post(gitlab: GitLab, notes: str, marker: str, body: str, head: str, mr: str)
     # marker. A token that cannot say who it is posts a new note.
     try:
         user = gitlab.call("GET", "/user")[0]["id"]
-    except (urllib.error.URLError, KeyError, TypeError) as error:
+    except (urllib.error.URLError, ValueError, KeyError, TypeError) as error:
         warn(f"posting a new note: the token's user is unknown ({error})")
         user = None
     mine = [
@@ -100,7 +101,7 @@ def main(argv: list[str]) -> int:
         print("usage: note.py COMMENT", file=sys.stderr)
         return 2
     env = os.environ
-    token, iid = env.get("JPIPE_GITLAB_TOKEN", ""), env.get("CI_MERGE_REQUEST_IID", "")
+    token, iid = env.get("JPIPE_NOTE_TOKEN", ""), env.get("CI_MERGE_REQUEST_IID", "")
     if not token:
         print("No note: gitlab-token is not set")
         return 0
@@ -111,7 +112,9 @@ def main(argv: list[str]) -> int:
     # it. Encoded, so that no job name ends the HTML comment.
     marker = f"<!-- jpipe-ci-actions {urllib.parse.quote(env.get('CI_JOB_NAME', ''), safe='')} -->"
     body = f"{marker}\n{Path(argv[0]).read_text(encoding='utf-8')}"
-    project = urllib.parse.quote(env.get("CI_PROJECT_ID", ""), safe="")
+    # A merge request from a fork runs in the fork: the merge request is the target's.
+    project = env.get("CI_MERGE_REQUEST_PROJECT_ID") or env.get("CI_PROJECT_ID", "")
+    project = urllib.parse.quote(project, safe="")
     mr = f"/projects/{project}/merge_requests/{urllib.parse.quote(iid, safe='')}"
     # In a merged results pipeline, the commit is the merge's: the head is the source's.
     head = env.get("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA") or env.get("CI_COMMIT_SHA", "")

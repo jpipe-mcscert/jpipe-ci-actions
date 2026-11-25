@@ -2,7 +2,7 @@
 repository's files.
 
     python gitlab/inline.py           rewrite the block in templates/jpipe-runner.yml
-    python gitlab/inline.py --check   fail if the block differs from scripts/
+    python gitlab/inline.py --check   fail if the block differs from scripts/ and gitlab/job/
 
 A component is one YAML file, inlined into the consumer's pipeline: its job runs in the
 consumer's project, where scripts/ is not checked out (docs/adr/0004). So the template
@@ -24,8 +24,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = (ROOT / "scripts", ROOT / "gitlab" / "job")
 TEMPLATE = ROOT / "templates" / "jpipe-runner.yml"
-BEGIN = "# >>> scripts/: written by gitlab/inline.py, do not edit"
-END = "# <<< scripts/"
+BEGIN = "# >>> scripts/ and gitlab/job/: written by gitlab/inline.py, do not edit"
+END = "# <<< scripts/ and gitlab/job/"
 DELIMITER = "JPIPE_SCRIPT_END"
 # What YAML cannot hold in a block scalar: write such a character as an escape instead.
 UNPRINTABLE = re.compile("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f-\\x84\\x86-\\x9f\\ufffe\\uffff]")
