@@ -76,7 +76,9 @@ The job runs in `python:3.11-slim` by default. If the step libraries import pack
 an image that has them, with bash and Python, as `image`. The job installs jPipe Runner,
 and Graphviz with `apt-get` when a diagram needs it. It fails with the runner's exit
 code, and keeps the reports, the log and the diagram as the job's artifacts, under
-`.jpipe-runner/`, even when it fails.
+`.jpipe-runner/`, even when it fails. Its JUnit report shows the run in the merge request's
+test summary and the pipeline's *Tests* tab: one test case per element, which fails or is
+skipped with its reason and diagnostics, and one for validation.
 
 The component's inputs are those of the action, with the same names and defaults, except
 the GitHub-only ones (below). GitLab adds three of its own:
@@ -129,6 +131,7 @@ The outputs are the action's; the GitLab job has its exit code and its artifacts
 | `verdict` | `pass`, `fail`, `skip`, `valid` (a dry run) or `invalid`; empty when there is no report, or one whose schema this action does not read. |
 | `report` | Path to the JSON report, if one was written. |
 | `diagram` | Path to the diagram, if one was drawn. |
+| `junit` | Path to the JUnit XML report of the run, if one was written, in the artifact too: one test case per element, which fails or is skipped with its reason and diagnostics, and one for validation. A test report action can show it. |
 | `comment-id` | ID of the pull request comment, if one was posted or edited. |
 
 **Embedding the diagram.** GitHub shows a comment's images through a proxy that fetches

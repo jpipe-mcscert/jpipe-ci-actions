@@ -80,7 +80,10 @@ jobs:
           (diagram,) = out.glob("*.png")
           assert diagram.read_bytes()[1:4] == b"PNG", diagram
           assert (out / "log.txt").stat().st_size, "verbosity: debug logged nothing"
-          print("the job passed, and wrote the report, the log and a PNG diagram")
+          import xml.etree.ElementTree as ET
+          suite = ET.parse(out / "junit.xml").getroot()[0]
+          assert suite.get("tests") == "5" and suite.get("failures") == suite.get("errors") == "0", suite.attrib
+          print("the job passed, and wrote the report, the log, the JUnit report and a PNG diagram")
           EOF
 
       - name: Run the job with shell syntax in its inputs
@@ -152,12 +155,15 @@ jobs:
           VERDICT: ${{ steps.run.outputs.verdict }}
           REPORT: ${{ steps.run.outputs.report }}
           DIAGRAM: ${{ steps.run.outputs.diagram }}
+          JUNIT: ${{ steps.run.outputs.junit }}
         run: |
           [[ "$RESULT" == "0" && "$VERDICT" == "pass" ]] || { echo "::error::result $RESULT, verdict $VERDICT"; exit 1; }
-          for file in "$REPORT" "$DIAGRAM"; do
+          for file in "$REPORT" "$DIAGRAM" "$JUNIT"; do
             [[ -s "$file" ]] || { echo "::error::missing output file: '$file'"; exit 1; }
           done
           jq -e '.verdict == "pass" and .summary.pass == 4' "$REPORT"
+          # The JUnit report: the four elements and validation, none failed.
+          python3 -c 'import sys, xml.etree.ElementTree as ET; s = ET.parse(sys.argv[1]).getroot()[0]; sys.exit(not (s.get("tests") == "5" and s.get("failures") == s.get("errors") == "0"))' "$JUNIT"
 
   # The inputs the other jobs leave unset: steps run together, the runner's details in the
   # log, and a PNG diagram, whose status symbols need a font where Graphviz runs. On the

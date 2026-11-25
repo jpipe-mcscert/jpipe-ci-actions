@@ -65,7 +65,10 @@ check-example:
       report = json.loads((out / "report.json").read_text())
       assert report["verdict"] == "pass" and report["summary"]["pass"] == 4, report["summary"]
       assert list(out.glob("*.svg")), "no SVG diagram"
-      print("the job passed, and wrote the report and an SVG diagram")
+      import xml.etree.ElementTree as ET
+      suite = ET.parse(out / "junit.xml").getroot()[0]
+      assert suite.get("tests") == "5" and suite.get("failures") == suite.get("errors") == "0", suite.attrib
+      print("the job passed, and wrote the report, the JUnit report and an SVG diagram")
       EOF
 
 check-options:
