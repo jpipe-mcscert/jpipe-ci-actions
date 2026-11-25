@@ -63,7 +63,7 @@ inputs:
     required: false
     default: ""
   comment:
-    description: "If true, post the result as a comment on the pull request, and edit that comment on later runs (GitHub only)"
+    description: "If true, post the result as a comment on the pull request, and edit that comment on later runs; on GitLab, a note on the merge request"
     required: false
     default: "true"
   embed-image:

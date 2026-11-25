@@ -45,7 +45,9 @@ The options weighed:
   image: `gitlab/run-job.py` gives the template its inputs as GitLab does, and runs the
   job's script. GitLab runs the component only once a release reaches `main` (ADR-0001).
 - `gitlab/` holds this tooling. Behaviour that is GitLab's alone stays in the template,
-  as GitHub's stays in `action.yml` and `github/`.
+  as GitHub's stays in `action.yml` and `github/`; a script of it goes in `gitlab/job/`,
+  which the template carries as it carries `scripts/` (since #31, the note on the merge
+  request).
 
 ## Consequences
 

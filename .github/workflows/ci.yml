@@ -67,11 +67,19 @@ jobs:
       - name: Install PyYAML, which gitlab/run-job.py reads the template with
         run: python3 -m pip install -q -q --disable-pip-version-check pyyaml
 
-      - name: Run the job on the example, with jobs, debug logs and a PNG diagram
+      # With a token, by its variable's name: outside a merge request pipeline, the job
+      # writes the note, posts none, and goes on.
+      - name: Run the job on the example, with jobs, debug logs, a PNG diagram and a token
+        env:
+          JPIPE_GITLAB_TOKEN_FOR_CI: not-a-token
         run: |
+          # The input is the variable's name, $ included, not its value: single quotes.
+          # shellcheck disable=SC2016
           python3 gitlab/run-job.py --input working-directory=example \
             --input justification=justification.json --input library=steps.py \
-            --input jobs=auto --input verbosity=debug --input diagram-format=png
+            --input jobs=auto --input verbosity=debug --input diagram-format=png \
+            --input 'gitlab-token=$JPIPE_GITLAB_TOKEN_FOR_CI' | tee job.log
+          grep -q "No note: not a merge request pipeline" job.log
           python3 - <<'EOF'
           import json, pathlib
           out = pathlib.Path(".jpipe-runner")

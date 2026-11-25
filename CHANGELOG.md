@@ -24,6 +24,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the exit code. On GitLab, the merge request's test
   summary shows it; on GitHub, it is in the artifact, and the `junit` output gives its
   path for a test report action (#19).
+- **The GitLab component posts the run on the merge request**, as the action comments on
+  a pull request, and edits that note on later runs of the job. It needs `gitlab-token`,
+  a new GitLab-only input that names the masked CI/CD variable holding a project access
+  token with the `api` scope, such as `$JPIPE_GITLAB_TOKEN`: `CI_JOB_TOKEN` cannot post
+  notes. `comment` works as on
+  GitHub, and `comment: "false"` posts none (#31).
 
 ### Fixed
 - **Installing Graphviz no longer fails the action where it cannot run `sudo apt-get`.**

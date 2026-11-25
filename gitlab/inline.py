@@ -1,13 +1,15 @@
-"""Write scripts/ into the GitLab component, which cannot read this repository's files.
+"""Write scripts/ and gitlab/job/ into the GitLab component, which cannot read this
+repository's files.
 
     python gitlab/inline.py           rewrite the block in templates/jpipe-runner.yml
-    python gitlab/inline.py --check   fail if the block differs from scripts/
+    python gitlab/inline.py --check   fail if the block differs from scripts/ and gitlab/job/
 
 A component is one YAML file, inlined into the consumer's pipeline: its job runs in the
 consumer's project, where scripts/ is not checked out (docs/adr/0004). So the template
-carries a copy of each file of scripts/, which the job writes to a temporary directory,
-``$JPIPE_SCRIPTS``, before it runs them. The copy is written here, between the markers,
-and never by hand: scripts/ stays where the logic lives.
+carries a copy of each file of scripts/, shared with the action, and of gitlab/job/, the
+GitLab front end's own, which the job writes to a temporary directory, ``$JPIPE_SCRIPTS``,
+before it runs them. The copy is written here, between the markers, and never by hand:
+those directories stay where the logic lives.
 
 Each file is a quoted here-document, which the shell copies as it is: nothing in it is
 expanded. GitLab interpolates ``$[[`` everywhere in the template, so a file holding it is
@@ -20,24 +22,31 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPTS = ROOT / "scripts"
+SOURCES = (ROOT / "scripts", ROOT / "gitlab" / "job")
 TEMPLATE = ROOT / "templates" / "jpipe-runner.yml"
-BEGIN = "# >>> scripts/: written by gitlab/inline.py, do not edit"
-END = "# <<< scripts/"
+BEGIN = "# >>> scripts/ and gitlab/job/: written by gitlab/inline.py, do not edit"
+END = "# <<< scripts/ and gitlab/job/"
 DELIMITER = "JPIPE_SCRIPT_END"
 # What YAML cannot hold in a block scalar: write such a character as an escape instead.
 UNPRINTABLE = re.compile("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f-\\x84\\x86-\\x9f\\ufffe\\uffff]")
 
 
 def files() -> list[Path]:
-    """The files the job needs: every script of scripts/, by name."""
-    return sorted(
-        path for path in SCRIPTS.iterdir() if path.is_file() and path.suffix in (".sh", ".py")
-    )
+    """The files the job needs: every script of the sources, by name, which must differ."""
+    found = [
+        path
+        for source in SOURCES
+        for path in sorted(source.iterdir())
+        if path.is_file() and path.suffix in (".sh", ".py")
+    ]
+    names = [path.name for path in found]
+    if len(set(names)) != len(names):
+        raise SystemExit(f"two scripts share a name, and the job writes them to one place: {names}")
+    return found
 
 
 def block() -> list[str]:
-    """The shell that writes scripts/ to $JPIPE_SCRIPTS, one line per item."""
+    """The shell that writes the scripts to $JPIPE_SCRIPTS, one line per item."""
     lines = ['JPIPE_SCRIPTS="$(mktemp -d)"']
     for path in files():
         text = path.read_text(encoding="utf-8")
@@ -78,12 +87,12 @@ def main(argv: list[str]) -> int:
     if argv == ["--check"]:
         if current != wanted:
             print(
-                f"{TEMPLATE.relative_to(ROOT)} does not hold scripts/ as it is:"
+                f"{TEMPLATE.relative_to(ROOT)} does not hold scripts/ and gitlab/job/ as they are:"
                 " run python gitlab/inline.py",
                 file=sys.stderr,
             )
             return 1
-        print(f"{TEMPLATE.relative_to(ROOT)} holds scripts/ as it is")
+        print(f"{TEMPLATE.relative_to(ROOT)} holds scripts/ and gitlab/job/ as they are")
         return 0
     TEMPLATE.write_text(wanted, encoding="utf-8")
     return 0
