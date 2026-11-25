@@ -73,6 +73,8 @@ jobs:
         env:
           JPIPE_GITLAB_TOKEN_FOR_CI: not-a-token
         run: |
+          # The input is the variable's name, $ included, not its value: single quotes.
+          # shellcheck disable=SC2016
           python3 gitlab/run-job.py --input working-directory=example \
             --input justification=justification.json --input library=steps.py \
             --input jobs=auto --input verbosity=debug --input diagram-format=png \
