@@ -867,6 +867,18 @@ spec:
           print(f"warning: {message}")
 
 
+      def ours(gitlab: GitLab, notes: str, marker: str, user: int) -> list[Any]:
+          """The notes of this job, oldest first: written by the token's user, with the marker."""
+          return [
+              note
+              for note in gitlab.every(f"{notes}?sort=asc&order_by=created_at")
+              if note["author"]["id"] == user
+              and not note.get("system")
+              # A note edited on the web may end its lines with \r\n.
+              and note["body"].replace("\r", "").startswith(marker)
+          ]
+
+
       def post(gitlab: GitLab, notes: str, marker: str, body: str, head: str, mr: str) -> None:
           """Post ``body`` on the merge request, or edit the note this job posted before."""
           # Pipelines of successive pushes can end out of order: a run whose commit is no longer
@@ -882,22 +894,17 @@ spec:
           except (urllib.error.URLError, ValueError, KeyError, TypeError) as error:
               warn(f"posting a new note: the token's user is unknown ({error})")
               user = None
-          mine = [
-              note
-              for note in (gitlab.every(f"{notes}?sort=asc&order_by=created_at") if user else [])
-              if note["author"]["id"] == user
-              and not note.get("system")
-              # A note edited on the web may end its lines with \r\n.
-              and note["body"].replace("\r", "").startswith(marker)
-          ]
+          mine = ours(gitlab, notes, marker, user) if user else []
           if mine:
               gitlab.call("PUT", f"{notes}/{mine[0]['id']}", {"body": body})
               print(f"Edited note {mine[0]['id']} on the merge request")
           else:
               note = gitlab.call("POST", notes, {"body": body})[0]
               print(f"Posted note {note['id']} on the merge request")
-          # Two runs at once can each find no note, and each post one: the oldest is kept, and
-          # the others go, so the merge request is back to one.
+              # Two runs at once can each find no note, and each post one: read again, after
+              # posting, to see the other's.
+              mine = ours(gitlab, notes, marker, user) if user else []
+          # The oldest is kept, and the others go, so the merge request is back to one.
           for extra in mine[1:]:
               try:
                   gitlab.call("DELETE", f"{notes}/{extra['id']}")
