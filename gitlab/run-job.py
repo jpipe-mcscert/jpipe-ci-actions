@@ -10,7 +10,7 @@ variables, with the CI/CD variables the job reads; and runs the job's script in 
 under `set -eo pipefail`, as GitLab's runner does. It exits with the job's exit code.
 
 It needs PyYAML. It stands in for GitLab only as far as the job reads it: the interpolation
-of whole values and of text, variables with `expand: false`, and the script.
+of whole values and of text, variables with or without `expand`, and the script.
 """
 
 import os
@@ -25,6 +25,7 @@ import yaml
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "templates" / "jpipe-runner.yml"
 INPUT = re.compile(r"\$\[\[\s*inputs\.([\w-]+)\s*\]\]")
+VARIABLE = re.compile(r"\$(?:\{(\w+)\}|(\w+))")
 
 
 def inputs(spec: dict[str, Any], given: dict[str, str]) -> dict[str, str]:
@@ -84,11 +85,15 @@ def main(argv: list[str]) -> int:
     )
     env.update(CI_PROJECT_DIR=str(project), CI_COMMIT_SHA=sha or "0" * 40, CI_JOB_NAME=name)
     for variable, declared in job.get("variables", {}).items():
-        # Every variable of the template is declared with `expand: false`: its value is
-        # passed as it is.
-        if not isinstance(declared, dict) or declared.get("expand") is not False:
-            raise SystemExit(f"variable {variable}: declare it with expand: false")
-        env[variable] = str(declared["value"])
+        # Every variable of the template says whether GitLab expands it: with `expand:
+        # false`, its value is passed as it is; otherwise, $VAR and ${VAR} in it are
+        # replaced with their values, or nothing.
+        if not isinstance(declared, dict) or not isinstance(declared.get("expand"), bool):
+            raise SystemExit(f"variable {variable}: declare whether it expands (expand:)")
+        value = str(declared["value"])
+        if declared["expand"]:
+            value = VARIABLE.sub(lambda match: env.get(match.group(1) or match.group(2), ""), value)
+        env[variable] = value
 
     print(f"Running job {name!r} in {job['image']!r} (here: this machine)", flush=True)
     script = "set -eo pipefail\n" + "\n".join(job["script"])

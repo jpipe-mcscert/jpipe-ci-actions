@@ -81,18 +81,39 @@ test summary and the pipeline's *Tests* tab: one test case per element, which fa
 skipped with its reason and diagnostics, and one for validation.
 
 The component's inputs are those of the action, with the same names and defaults, except
-the GitHub-only ones (below). GitLab adds three of its own:
+the GitHub-only ones (below). GitLab adds four of its own:
 
 | Input | Default | |
 |---|---|---|
 | `stage` | `test` | Pipeline stage the job runs in. |
 | `job-name` | `jpipe-runner` | Name of the job. Include the component once per justification, each with its own `job-name`. |
 | `image` | `python:3.11-slim` | Image the job runs in: it needs bash and Python, with the packages the step libraries import. |
+| `gitlab-token` | | Token that posts the note on the merge request: a project access token with the `api` scope and at least the Reporter role, kept in a masked CI/CD variable and given by its name, such as `$JPIPE_GITLAB_TOKEN`. `CI_JOB_TOKEN` cannot post notes. Empty posts none. |
+
+**The note on the merge request.** With `gitlab-token`, a merge request pipeline posts
+the run on the merge request, as the action comments on a pull request: the verdict, the
+elements that did not pass and why, each diagnostic with its fix, the text report and the
+log, and a link to the job's artifacts. Each later run of the job edits that note, found
+by a hidden marker naming the job, and written by the token's user; a run whose commit
+is no longer the merge request's head leaves it alone. A pipeline needs merge request
+pipelines (`rules` or `workflow:rules` on `$CI_PIPELINE_SOURCE == "merge_request_event"`)
+to have a merge request to post on. If the note cannot be posted, the job warns and goes
+on. `comment: "false"` posts none.
+
+```yaml
+include:
+  - component: gitlab.com/mcscert/jpipe-ci-actions/jpipe-runner@<version>
+    inputs:
+      justification: release.json
+      library: steps/*.py
+      gitlab-token: $JPIPE_GITLAB_TOKEN
+```
 
 GitLab checks the type of an input, and every input here is a string: quote a value YAML
-would read otherwise, such as `strict: "true"` or `jobs: "4"`. A job's debug logging (`CI_DEBUG_TRACE`) sets `verbosity` to
-`debug`, as a re-run with debug logging does on GitHub. `incremental` needs `baseline` on
-GitLab: the component keeps no baseline of its own yet, and runs in full without one.
+would read otherwise, such as `strict: "true"` or `jobs: "4"`. A job's debug logging
+(`CI_DEBUG_TRACE`) sets `verbosity` to `debug`, as a re-run with debug logging does on
+GitHub. `incremental` needs `baseline` on GitLab: the component keeps no baseline of its
+own yet, and runs in full without one (#30).
 
 ### Inputs
 
@@ -112,8 +133,8 @@ GitLab: the component keeps no baseline of its own yet, and runs in full without
 | `python-executable` | | Python interpreter to run jPipe Runner with; by default the action sets up Python 3.11, and the GitLab job runs the image's `python3`. |
 | `runner-version` | `4.5.0` | jPipe Runner to install: a release on PyPI (`4.5.0`), or a git ref of its repository. |
 | `artifact-name` | `jpipe-runner-<job>` | Name of the artifact; set it to run the action twice in one job. On GitLab, the name of the job's artifacts archive. In a matrix, the default is `jpipe-runner-<job>-<index>`, the job's index in the matrix; name it after a matrix value instead (`jpipe-${{ matrix.os }}`) to tell the artifacts apart, and to keep each job's comment on the pull request when the matrix changes. Set it in a reusable workflow called from a matrix, which sees only its own job. |
-| `comment` | `true` | Comment on the pull request, and edit that comment on later runs. GitHub only, as are the inputs below. |
-| `embed-image` | `false` | Commit the diagram to `image-branch`, and show it in the comment. |
+| `comment` | `true` | Comment on the pull request, and edit that comment on later runs. On GitLab, the note on the merge request, which needs `gitlab-token`. |
+| `embed-image` | `false` | Commit the diagram to `image-branch`, and show it in the comment. GitHub only, as are the inputs below. |
 | `image-repo` | this repository | Repository (`owner/name`) the diagram is committed to. |
 | `image-branch` | `jpipe-runner-diagrams` | Branch the diagram is committed to, created as an orphan. |
 | `image-path` | `diagrams` | Folder the diagram is committed to, under one named after this repository. |
@@ -217,7 +238,7 @@ and rename the inputs: `jd_file` is `justification`, `working_directory` is
 | `templates/jpipe-runner.yml` | The GitLab CI/CD component, the counterpart of `action.yml`, with a generated copy of `scripts/` |
 | `scripts/` | Behaviour shared by both, free of platform-specific variables |
 | `github/` | Behaviour of the GitHub Action alone: committing the diagram, finding its URL |
-| `gitlab/` | `inline.py` copies `scripts/` into the component; `run-job.py` runs its job outside GitLab, for CI |
+| `gitlab/` | `job/`: behaviour of the GitLab component alone, the note on the merge request; `inline.py` copies `scripts/` and `job/` into the component; `run-job.py` runs its job outside GitLab, for CI |
 | `example/` | A justification and its step library, which CI runs the action on |
 | `.github/workflows/ci.yml` | Lints the repository, runs the action on the example with the default and the latest jPipe Runner (and, without failing, the runner's `dev` branch), runs the inputs the example leaves unset (`jobs`, `verbosity`, a PNG diagram) on the slim image too, and incremental runs, checks that hostile inputs run nothing, and that a pull request keeps one comment; runs the GitLab component's job, and checks that its copy of `scripts/` is current; weekly as well |
 | `.github/workflows/mirror.yml` | Pushes `main` and the tags to the GitLab mirror |
@@ -288,8 +309,8 @@ Work follows the jPipe
 `dev` is the default branch, work branches are cut from it and come back through a pull
 request, and `main` holds released code, which reaches it from a release branch.
 
-The GitLab component holds a copy of `scripts/`: after changing a script, run
-`python3 gitlab/inline.py` and commit the template with it, or CI fails.
+The GitLab component holds a copy of `scripts/` and `gitlab/job/`: after changing a
+script there, run `python3 gitlab/inline.py` and commit the template with it, or CI fails.
 
 ## License
 
